@@ -3,6 +3,7 @@ import { useMemo } from 'react'
 import type { UploadRow } from './engine/types'
 import { runRules } from './engine/rules'
 import { RULE_CONTEXT } from './data/dataset'
+import { push, shared } from '../sync'
 
 export interface Submission {
   receiptNo: string
@@ -40,12 +41,17 @@ function load(): Persisted {
     return empty
   }
 }
-function save(p: Persisted) {
+function store(p: Persisted) {
   try {
     localStorage.setItem(KEY, JSON.stringify(p))
   } catch {
     return
   }
+}
+
+function save(p: Persisted) {
+  store(p)
+  push(KEY, p)
 }
 
 const pick = (s: InstState): Persisted => ({
@@ -69,3 +75,5 @@ export async function sha256(text: string): Promise<string> {
   const buf = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(text))
   return [...new Uint8Array(buf)].map((b) => b.toString(16).padStart(2, '0')).join('')
 }
+
+shared(KEY, (v) => { const p = { ...empty, ...(v as Persisted) }; useInst.setState(p); store(p) }, () => pick(useInst.getState()))

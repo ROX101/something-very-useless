@@ -61,3 +61,7 @@ Printed or photographed copies do not carry the watermark; for those the QR sign
 
 ## Open on a phone
 Phone browsers only allow the camera on https. Run `npm run phone` and open the **Network** address it prints (https://<laptop-ip>:5173) on a phone on the same Wi-Fi. The browser warns about the certificate once: tap Advanced, then Proceed. Allow Camera when asked.
+
+## Shared live data
+The dev server (`npm run dev` or `npm run phone`) includes a small sync service. Every device and tab that opens the site (laptop, phone, localhost or the network address) shares the same live data: uploads and submissions, consent requests and decisions, and AICTE case decisions. Changes appear on other screens within a second, without reloading. Data is saved in `.data/state.json` on the laptop.
+To start a clean take: login page, Demo accounts, Reset demo data (clears every device), or delete `.data/state.json`.

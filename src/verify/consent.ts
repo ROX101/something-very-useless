@@ -1,7 +1,18 @@
 import { create } from 'zustand'
+import { push, shared } from '../sync'
 
 export const SHARED_FIELDS = ['Name', 'Degree', 'Year of award', 'Award status']
 export const PRIVATE_FIELDS = ['Marks and CGPA', 'Category', 'Address', 'Date of birth']
+
+export const PURPOSES = [
+  { id: 'pre-employment', label: 'Pre-employment background verification', reference: 'Offer letter number', example: 'TSPL/HR/OL/2026/1187' },
+  { id: 'appointment', label: 'Verification of qualification for appointment or promotion', reference: 'Appointment order number', example: 'TSPL/HR/AO/2026/0342' },
+  { id: 'admission', label: 'Admission to a higher education programme', reference: 'Application number', example: 'PG-2026-004571' },
+  { id: 'loan', label: 'Education loan or scholarship sanction', reference: 'Loan or scholarship application number', example: 'EDL/26/77120' },
+  { id: 'registration', label: 'Registration with a professional body', reference: 'Registration application number', example: 'REG/2026/11093' },
+] as const
+
+export const RETENTION = [30, 90, 180]
 
 export type RequestStatus = 'Pending' | 'Approved' | 'Refused' | 'Revoked' | 'Expired'
 
@@ -11,7 +22,9 @@ export interface VerificationRequest {
   verifier: string
   verifierOrg: string
   purpose: string
+  reference: string
   validityDays: number
+  retentionDays: number
   createdAt: string
   status: RequestStatus
   decidedAt?: string
@@ -41,7 +54,7 @@ function seed(): Persisted {
     seq: 7731,
     requests: [{
       id: 'RQ-1001', apaar: STUDENT_APAAR, verifier: 'Kabir Menon', verifierOrg: 'Tarang Software Pvt. Ltd.',
-      purpose: 'Employment verification', validityDays: 7, createdAt: new Date(now.getTime() - 4 * 60000).toISOString(), status: 'Pending',
+      purpose: 'Pre-employment background verification', reference: 'Offer letter TSPL/HR/OL/2026/1187', validityDays: 7, retentionDays: 30, createdAt: new Date(now.getTime() - 4 * 60000).toISOString(), status: 'Pending',
     }],
     log: [{ id: 'LG-1', at: new Date(now.getTime() - 4 * 60000).toISOString(), actor: 'Tarang Software Pvt. Ltd.', action: 'Requested to verify your degree' }],
   }
@@ -56,12 +69,17 @@ function load(): Persisted {
   }
 }
 
-function save(p: Persisted) {
+function store(p: Persisted) {
   try {
     localStorage.setItem(KEY, JSON.stringify(p))
   } catch {
     return
   }
+}
+
+function save(p: Persisted) {
+  store(p)
+  push(KEY, p)
 }
 
 interface ConsentState extends Persisted {
@@ -120,6 +138,7 @@ if (typeof window !== 'undefined') {
   window.addEventListener('storage', (e) => {
     if (e.key === KEY) useConsent.setState(load())
   })
+  shared(KEY, (v) => { useConsent.setState(v as Persisted); store(v as Persisted) }, () => pick(useConsent.getState()))
 }
 
 export function activeConsent(requests: VerificationRequest[], apaar: string, org: string) {

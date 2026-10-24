@@ -348,7 +348,7 @@ function Result({ r, onReset }: { r: VerifyResult; onReset: () => void }) {
         <div className="border-b border-line px-5 py-4">
           {waiting
             ? <p className="text-ink">Request sent. Waiting for the student to allow or refuse.</p>
-            : <button className={btn.primary} onClick={() => request({ apaar, verifier: VERIFIER.name, verifierOrg: VERIFIER.org, purpose: 'Employment verification', validityDays: 7 })}>Ask the student for consent</button>}
+            : <button className={btn.primary} onClick={() => request({ apaar, verifier: VERIFIER.name, verifierOrg: VERIFIER.org, purpose: 'Pre-employment background verification', reference: 'Offer letter TSPL/HR/OL/2026/1187', validityDays: 7, retentionDays: 30 })}>Ask the student for consent</button>}
         </div>
       )}
 

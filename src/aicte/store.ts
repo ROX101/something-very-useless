@@ -3,6 +3,7 @@ import { useMemo } from 'react'
 import { useInst, useValidation } from '../inst/store'
 import { INSTITUTION } from '../inst/data/reference'
 import { BASE, SAMPLE_ALERTS, type AicteAlert } from './data'
+import { push, shared } from '../sync'
 
 export type CaseStatus = 'Open' | 'Referred to Regional Office' | 'Reviewed, no action'
 
@@ -34,13 +35,20 @@ export const useCases = create<CaseState>((set, get) => ({
   act: (id, a) => {
     const actions = { ...get().actions, [id]: a }
     set({ actions })
-    try {
-      localStorage.setItem(KEY, JSON.stringify(actions))
-    } catch {
-      return
-    }
+    keep(actions)
+    push(KEY, actions)
   },
 }))
+
+function keep(actions: Record<string, CaseAction>) {
+  try {
+    localStorage.setItem(KEY, JSON.stringify(actions))
+  } catch {
+    return
+  }
+}
+
+shared(KEY, (v) => { useCases.setState({ actions: v as Record<string, CaseAction> }); keep(v as Record<string, CaseAction>) }, () => useCases.getState().actions)
 
 export function useLiveSubmission() {
   const submissions = useInst((s) => s.submissions)

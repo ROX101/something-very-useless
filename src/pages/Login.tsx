@@ -4,6 +4,7 @@ import { PublicLayout } from '../ui/PublicLayout'
 import { useT } from '../i18n'
 import { useApp } from '../store'
 import { ACCOUNTS, DEMO_PASSWORD, ROLE_HOME, ROLE_LABEL, signIn } from '../auth/directory'
+import { resetAll } from '../sync'
 
 function EyeIcon({ off }: { off?: boolean }) {
   return (
@@ -179,6 +180,8 @@ export default function Login() {
                     </li>
                   ))}
                 </ul>
+                <button type="button" onClick={() => { if (window.confirm('Clear all uploads, submissions, consents and AICTE decisions on every device?')) void resetAll() }}
+                  className="mt-3 text-xs font-semibold text-err underline underline-offset-2">Reset demo data</button>
               </div>
             )}
           </div>
