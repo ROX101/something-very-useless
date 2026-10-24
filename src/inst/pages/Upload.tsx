@@ -1,0 +1,531 @@
+import { useEffect, useMemo, useRef, useState, type DragEvent } from 'react'
+import { Link } from 'react-router-dom'
+import { InstLayout } from '../ui/InstLayout'
+import { Card, ClauseChip, CountUp, LockIcon, PageHeader, RuleChip, btn, formatApaar, formatDate, maskApaar } from '../ui/bits'
+import { useInst, useValidation } from '../store'
+import { parseWorkbook, downloadErrorReport, downloadTemplate, type ParsedFile } from '../excel'
+import { GATES, RULE_INFO, applyAllFixes, applyFix, runRules } from '../engine/rules'
+import { RULE_CONTEXT } from '../data/dataset'
+import { INSTITUTION } from '../data/reference'
+import { COLUMNS, OPTIONAL_COLUMNS, type Flag, type RowResult, type RuleCode, type ValidationResult } from '../engine/types'
+
+type Phase = 'select' | 'mapped' | 'validating' | 'results'
+
+export default function Upload() {
+  const { rows, fileName, uploadedAt, fixesApplied, setUpload, setRows, clearUpload } = useInst()
+  const result = useValidation()
+  const [phase, setPhase] = useState<Phase>(rows ? 'results' : 'select')
+  const [parsed, setParsed] = useState<{ file: string; data: ParsedFile } | null>(null)
+  const [error, setError] = useState('')
+  const [pending, setPending] = useState<ValidationResult | null>(null)
+
+  async function onFile(file: File) {
+    setError('')
+    if (!/\.(xlsx|xls|csv)$/i.test(file.name)) { setError('Upload an Excel (.xlsx) or CSV file.'); return }
+    try {
+      const data = parseWorkbook(await file.arrayBuffer())
+      if (data.missing.length) { setError(`Missing required columns: ${data.missing.join(', ')}`); return }
+      if (!data.rows.length) { setError('The file has no data rows.'); return }
+      setParsed({ file: file.name, data })
+      setPhase('mapped')
+    } catch {
+      setError('This file could not be read. Use the enrolment template.')
+    }
+  }
+
+  function startValidation() {
+    if (!parsed) return
+    setPending(runRules(parsed.data.rows, RULE_CONTEXT))
+    setUpload(parsed.file, parsed.data.rows)
+    setPhase('validating')
+  }
+
+  function reset() {
+    clearUpload()
+    setParsed(null)
+    setPhase('select')
+  }
+
+  return (
+    <InstLayout>
+      {phase === 'select' && <SelectFile onFile={onFile} error={error} />}
+      {phase === 'mapped' && parsed && (
+        <Mapping parsed={parsed} onBack={() => { setParsed(null); setPhase('select') }} onValidate={startValidation} />
+      )}
+      {phase === 'validating' && pending && <Validating result={pending} onDone={() => setPhase('results')} />}
+      {phase === 'results' && result && rows && (
+        <Results
+          result={result}
+          fileName={fileName ?? ''}
+          uploadedAt={uploadedAt}
+          fixesApplied={fixesApplied}
+          onReset={reset}
+          onApplyAll={() => setRows(applyAllFixes(rows, result), result.fixable)}
+          onApplyOne={(rowNo, f) => f.fix && setRows(applyFix(rows, rowNo, f.fix), 1)}
+        />
+      )}
+    </InstLayout>
+  )
+}
+
+function SelectFile({ onFile, error }: { onFile: (f: File) => void; error: string }) {
+  const [tab, setTab] = useState<'excel' | 'api'>('excel')
+  const [over, setOver] = useState(false)
+  const input = useRef<HTMLInputElement>(null)
+  const onDrop = (e: DragEvent) => {
+    e.preventDefault()
+    setOver(false)
+    const f = e.dataTransfer.files[0]
+    if (f) onFile(f)
+  }
+  return (
+    <>
+      <PageHeader title="Upload & validate" sub={`First-year admissions, AY ${INSTITUTION.ay}`} />
+      <div className="mb-4 flex gap-1 border-b border-line" role="tablist">
+        {(['excel', 'api'] as const).map((t) => (
+          <button key={t} role="tab" aria-selected={tab === t} onClick={() => setTab(t)}
+            className={`-mb-px border-b-2 px-4 py-2.5 text-sm font-semibold ${tab === t ? 'border-navy text-navy' : 'border-transparent text-muted hover:text-ink'}`}>
+            {t === 'excel' ? 'Excel upload' : 'ERP via API'}
+          </button>
+        ))}
+      </div>
+
+      {tab === 'excel' ? (
+        <Card className="p-6">
+          <div
+            onDragOver={(e) => { e.preventDefault(); setOver(true) }}
+            onDragLeave={() => setOver(false)}
+            onDrop={onDrop}
+            onClick={() => input.current?.click()}
+            role="button" tabIndex={0}
+            onKeyDown={(e) => (e.key === 'Enter' || e.key === ' ') && input.current?.click()}
+            className={`flex cursor-pointer flex-col items-center justify-center rounded border-2 border-dashed px-6 py-16 text-center transition ${over ? 'border-navy bg-navy-light' : 'border-line hover:border-navy/60 hover:bg-page'}`}>
+            <svg className="h-12 w-12 text-navy" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" aria-hidden>
+              <path d="M14 3H7a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V8z" /><path d="M14 3v5h5M9 13l2 2 4-4" />
+            </svg>
+            <p className="mt-4 text-lg font-semibold text-ink">Drop the admissions file here</p>
+            <p className="mt-1 text-sm text-muted">or <span className="font-semibold text-navy underline">browse</span>, .xlsx or .csv, one row per student</p>
+            <input ref={input} type="file" accept=".xlsx,.xls,.csv" className="hidden"
+              onChange={(e) => { const f = e.target.files?.[0]; if (f) onFile(f); e.target.value = '' }} />
+          </div>
+          {error && <p role="alert" className="mt-4 rounded border-l-4 border-err bg-err-bg px-4 py-3 text-sm text-err">{error}</p>}
+          <div className="mt-5 flex flex-wrap items-center justify-between gap-3 text-sm">
+            <span className="text-muted">15 columns: APAAR ID, student ID, name, DOB, programme, quota and status fields</span>
+            <div className="flex gap-4">
+              <button type="button" onClick={downloadTemplate} className={btn.ghost}>Download template</button>
+              <a href="/Aranya_AY2026-27_FirstYear.xlsx" download className={btn.ghost}>Download sample file</a>
+            </div>
+          </div>
+        </Card>
+      ) : (
+        <Card className="p-6">
+          <div className="flex flex-wrap items-center gap-2">
+            <span className="rounded bg-ok-bg px-2 py-0.5 text-xs font-semibold text-igreen">OpenAPI 3.1</span>
+            <span className="rounded bg-page px-2 py-0.5 text-xs font-semibold text-ink">API key + mTLS</span>
+            <span className="rounded bg-page px-2 py-0.5 text-xs font-semibold text-ink">Batches of up to 1,000 records</span>
+          </div>
+          <pre className="mt-4 overflow-x-auto rounded bg-slate-900 p-5 text-[13px] leading-relaxed text-slate-100">{`POST /v1/institutions/${INSTITUTION.pid}/enrolments:batch
+Authorization: Bearer <client-credentials token>
+Idempotency-Key: 6f1c2e0a-…
+
+{
+  "academicYear": "${INSTITUTION.ay}",
+  "records": [
+    { "apaarId": "4471…", "instStudentId": "ARN26CSE001",
+      "name": "…", "dob": "2008-03-15", "programme": "B.Tech CSE",
+      "quota": "REGULAR", "nri": "N", "oci": "N", "fn": "N" }
+  ]
+}
+
+→ 202 Accepted  { "jobId": "val-…", "status": "VALIDATING" }`}</pre>
+          <p className="mt-4 text-sm text-muted">Records sent by API go through the same six validation gates as an Excel upload, and results are returned by webhook.</p>
+        </Card>
+      )}
+    </>
+  )
+}
+
+function Mapping({ parsed, onBack, onValidate }: { parsed: { file: string; data: ParsedFile }; onBack: () => void; onValidate: () => void }) {
+  const { data } = parsed
+  return (
+    <>
+      <PageHeader title="Check columns" sub={<>{parsed.file}, sheet “{data.sheetName}”, {data.rows.length.toLocaleString('en-IN')} rows</>} />
+      <Card className="p-6">
+        <p className="text-sm font-semibold text-ink">
+          {COLUMNS.length - OPTIONAL_COLUMNS.length} required columns mapped, {OPTIONAL_COLUMNS.length} optional
+        </p>
+        <div className="mt-4 grid gap-2 sm:grid-cols-2 lg:grid-cols-3">
+          {COLUMNS.map((c, i) => {
+            const ok = data.found.includes(c)
+            return (
+              <div key={c} style={{ animationDelay: `${i * 45}ms` }}
+                className="animate-[fadeUp_.35s_ease-out_both] flex items-center justify-between rounded border border-line px-3 py-2">
+                <span className="font-mono text-[13px] text-ink">{c}</span>
+                <span className={`flex items-center gap-1.5 text-xs font-semibold ${ok ? 'text-igreen' : 'text-muted'}`}>
+                  {ok ? '✓ Mapped' : 'Optional'}
+                </span>
+              </div>
+            )
+          })}
+        </div>
+        <div className="mt-6 flex flex-wrap gap-3">
+          <button className={btn.primary} onClick={onValidate}>Validate {data.rows.length.toLocaleString('en-IN')} rows</button>
+          <button className={btn.secondary} onClick={onBack}>Choose another file</button>
+        </div>
+      </Card>
+    </>
+  )
+}
+
+const TOTAL_MS = 1900
+
+function Validating({ result, onDone }: { result: ValidationResult; onDone: () => void }) {
+  const [t, setT] = useState(0)
+  const done = useRef(onDone)
+  done.current = onDone
+  useEffect(() => {
+    const start = performance.now()
+    let raf = 0
+    let timer = 0
+    const tick = (now: number) => {
+      const e = now - start
+      setT(Math.min(e, TOTAL_MS))
+      if (e < TOTAL_MS) raf = requestAnimationFrame(tick)
+      else timer = window.setTimeout(() => done.current(), 350)
+    }
+    raf = requestAnimationFrame(tick)
+    return () => { cancelAnimationFrame(raf); clearTimeout(timer) }
+  }, [])
+
+  const perGate = useMemo(() => {
+    const g = GATES.map(() => ({ hit: 0, auto: 0 }))
+    for (const r of result.rows) for (const f of r.flags) {
+      const i = RULE_INFO[f.rule].gate
+      if (f.kind === 'auto') g[i].auto++
+      else g[i].hit++
+    }
+    return g
+  }, [result])
+
+  const p = t / TOTAL_MS
+  const gateSpan = TOTAL_MS / GATES.length
+  const processed = Math.round(result.counts.total * p)
+
+  return (
+    <>
+      <PageHeader title="Validating" sub={`${result.counts.total.toLocaleString('en-IN')} rows, rule pack APH 2024-27, AY ${INSTITUTION.ay}`} />
+      <Card className="p-6 sm:p-8">
+        <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-6">
+          {GATES.map((g, i) => {
+            const state = t >= (i + 1) * gateSpan ? 'done' : t >= i * gateSpan ? 'active' : 'idle'
+            return (
+              <div key={g}
+                className={`rounded border-2 p-4 transition-colors duration-200 ${state === 'done' ? 'border-navy bg-navy-light' : state === 'active' ? 'border-saffron bg-saffron/10' : 'border-line bg-white'}`}>
+                <p className="text-xs text-muted">Gate {i + 1}</p>
+                <p className="mt-1 font-semibold text-ink">{g}</p>
+                <p className="mt-3 min-h-[40px] text-sm leading-5">
+                  {state === 'done' && (
+                    <>
+                      {perGate[i].hit > 0 && <span className="font-semibold text-err">{perGate[i].hit} flagged</span>}
+                      {perGate[i].hit > 0 && perGate[i].auto > 0 && <br />}
+                      {perGate[i].auto > 0 && <span className="font-semibold text-info">{perGate[i].auto} cleared</span>}
+                      {perGate[i].hit + perGate[i].auto === 0 && <span className="text-igreen">✓ Passed</span>}
+                    </>
+                  )}
+                </p>
+              </div>
+            )
+          })}
+        </div>
+        <div className="mt-8">
+          <div className="flex justify-between text-sm">
+            <span className="font-medium text-ink">{processed.toLocaleString('en-IN')} / {result.counts.total.toLocaleString('en-IN')} rows</span>
+            <span className="text-muted tnum">{(t / 1000).toFixed(1)} s</span>
+          </div>
+          <div className="mt-2 h-2 overflow-hidden rounded bg-page">
+            <div className="h-full bg-navy" style={{ width: `${p * 100}%` }} />
+          </div>
+        </div>
+      </Card>
+    </>
+  )
+}
+
+interface Item { rr: RowResult; flag: Flag }
+
+function Results(props: {
+  result: ValidationResult
+  fileName: string
+  uploadedAt: string | null
+  fixesApplied: number
+  onReset: () => void
+  onApplyAll: () => void
+  onApplyOne: (rowNo: number, f: Flag) => void
+}) {
+  const { result, fileName, uploadedAt, fixesApplied } = props
+  const [drawer, setDrawer] = useState<number | null>(null)
+
+  const groups = useMemo(() => {
+    const errors = new Map<RuleCode, Item[]>()
+    const autos = new Map<RuleCode, Item[]>()
+    for (const rr of result.rows) for (const flag of rr.flags) {
+      const m = flag.kind === 'error' ? errors : flag.kind === 'auto' ? autos : null
+      if (!m) continue
+      m.set(flag.rule, [...(m.get(flag.rule) ?? []), { rr, flag }])
+    }
+    const byCode = (a: [RuleCode, Item[]], b: [RuleCode, Item[]]) => a[0].localeCompare(b[0])
+    return { errors: [...errors.entries()].sort(byCode), autos: [...autos.entries()].sort(byCode) }
+  }, [result])
+
+  const byRowNo = useMemo(() => new Map(result.rows.map((r) => [r.row.rowNo, r])), [result])
+  const open = drawer !== null ? byRowNo.get(drawer) ?? null : null
+  const ready = result.dataErrors === 0
+
+  return (
+    <>
+      <PageHeader
+        title="Validation results"
+        sub={<>{fileName}{uploadedAt && <>, uploaded {formatDate(uploadedAt)}</>}</>}
+        actions={<>
+          <button className={btn.secondary} onClick={() => downloadErrorReport(result, fileName)}>Download issues (.xlsx)</button>
+          <button className={btn.secondary} onClick={props.onReset}>Upload new file</button>
+        </>}
+      />
+
+      <div className="grid divide-y divide-line rounded border border-line bg-white sm:grid-cols-3 sm:divide-x sm:divide-y-0">
+        <Stat label="Clean" value={result.counts.clean} tone="text-ink" />
+        <Stat label="Need action" value={result.counts.action} tone={result.counts.action ? 'text-err' : 'text-ink'} />
+        <Stat label="Auto-cleared" value={result.counts.auto} tone="text-ink" />
+      </div>
+
+      {ready ? (
+        <div className="mt-5 flex flex-col gap-3 border-l-4 border-ok bg-ok-bg px-5 py-4 sm:flex-row sm:items-center sm:justify-between">
+          <div>
+            <p className="text-lg font-semibold text-ink">
+              {result.counts.total.toLocaleString('en-IN')} records ready, {result.alerts.length} compliance alert{result.alerts.length === 1 ? '' : 's'}
+            </p>
+            <p className="text-sm text-muted">
+              {fixesApplied > 0 && <>{fixesApplied} fixes applied. </>}Data errors are resolved. Compliance alerts will be shared with AICTE on submission.
+            </p>
+          </div>
+          <Link to="/inst/ledger" className={btn.primary}>Continue to seat ledger</Link>
+        </div>
+      ) : (
+        <div className="mt-5 flex flex-col gap-3 border-l-4 border-err bg-white px-5 py-4 sm:flex-row sm:items-center sm:justify-between">
+          <p className="text-sm text-ink">
+            <span className="font-semibold text-ink">{result.dataErrors} data errors</span> to resolve before submission.{' '}
+            <span className="font-semibold text-ink">{result.fixable}</span> have a suggested fix
+          </p>
+          {result.fixable > 0 && (
+            <button className={btn.primary} onClick={props.onApplyAll}>Apply {result.fixable} suggested fixes</button>
+          )}
+        </div>
+      )}
+
+      {groups.errors.length > 0 && (
+        <Section title="Data errors" note="Fix these in the file, or apply the suggested fix.">
+          {groups.errors.map(([rule, items]) => (
+            <IssueGroup key={rule} rule={rule} kind="error" items={items} onOpen={setDrawer} />
+          ))}
+        </Section>
+      )}
+
+      {result.alerts.length > 0 && (
+        <Section title="Compliance alerts" note="Cannot be cleared by the institution, shared with AICTE" icon={<LockIcon className="h-4 w-4 text-warn" />}>
+          {result.alerts.map((a) => (
+            <div key={a.id} className="px-5 py-4">
+              <div className="flex flex-wrap items-start justify-between gap-3">
+                <div className="flex items-start gap-1">
+                  <RuleChip rule={a.rule} kind="alert" />
+                  <div>
+                    <p className="font-semibold text-ink">{a.title}</p>
+                    <p className="text-sm text-muted">{a.detail}</p>
+                  </div>
+                </div>
+                <ClauseChip clause={a.clause} />
+              </div>
+              {a.rowNos.length > 0 && (
+                <div className="mt-3 flex flex-wrap gap-2 pl-[52px]">
+                  {a.rowNos.map((n) => {
+                    const r = byRowNo.get(n)!
+                    return (
+                      <button key={n} onClick={() => setDrawer(n)}
+                        className="rounded border border-line bg-white px-3 py-1.5 text-left text-sm hover:border-warn">
+                        <span className="text-muted tnum">Row {n}</span>{' '}
+                        <span className="font-medium text-ink">{r.row.NAME}</span>
+                      </button>
+                    )
+                  })}
+                </div>
+              )}
+            </div>
+          ))}
+        </Section>
+      )}
+
+      {groups.autos.length > 0 && (
+        <Section title="Auto-cleared" note="Checked and accepted. No action needed.">
+          {groups.autos.map(([rule, items]) => (
+            <IssueGroup key={rule} rule={rule} kind="auto" items={items} onOpen={setDrawer} />
+          ))}
+        </Section>
+      )}
+
+      {open && (
+        <RowDrawer rr={open} onClose={() => setDrawer(null)}
+          onFix={(f) => { props.onApplyOne(open.row.rowNo, f); if (f.fix?.remove) setDrawer(null) }} />
+      )}
+    </>
+  )
+}
+
+function Stat({ label, value, tone }: { label: string; value: number; tone: string }) {
+  return (
+    <div className="px-6 py-5">
+      <p className="text-[15px] text-muted">{label}</p>
+      <CountUp value={value} className={`mt-1 block text-[40px] font-semibold leading-none tabular-nums ${tone}`} />
+    </div>
+  )
+}
+
+function Section({ title, note, icon, children }: { title: string; note: string; icon?: React.ReactNode; children: React.ReactNode }) {
+  return (
+    <section className="mt-8">
+      <div className="rounded border border-line bg-white">
+        <div className="flex flex-wrap items-baseline gap-x-3 gap-y-1 border-b border-line px-5 py-3.5">
+          <h2 className="flex items-center gap-2 text-base font-semibold text-ink">{icon}{title}</h2>
+          <span className="text-sm text-muted">{note}</span>
+        </div>
+        <div className="divide-y divide-line">{children}</div>
+      </div>
+    </section>
+  )
+}
+
+function IssueGroup({ rule, kind, items, onOpen }: { rule: RuleCode; kind: 'error' | 'auto'; items: Item[]; onOpen: (n: number) => void }) {
+  const [open, setOpen] = useState(false)
+  const [resolved, setResolved] = useState(false)
+  const isNri = rule === 'R05a'
+  useEffect(() => {
+    if (!open || !isNri) return
+    setResolved(false)
+    const id = setTimeout(() => setResolved(true), 900)
+    return () => clearTimeout(id)
+  }, [open, isNri])
+  const info = RULE_INFO[rule]
+  return (
+    <div>
+      <button onClick={() => setOpen((v) => !v)} aria-expanded={open}
+        className="flex w-full items-center justify-between gap-3 px-5 py-3.5 text-left hover:bg-page/60">
+        <span className="flex items-center gap-1">
+          <RuleChip rule={rule} kind={kind} />
+          <span className="font-semibold text-ink">{info.title}</span>
+          {info.clause && <span className="hidden sm:inline"><ClauseChip clause={info.clause} /></span>}
+        </span>
+        <span className="flex items-center gap-3">
+          <span className="text-sm text-muted tnum">{items.length} row{items.length === 1 ? '' : 's'}</span>
+          <span className={`text-muted transition-transform ${open ? 'rotate-180' : ''}`}>▾</span>
+        </span>
+      </button>
+      {open && (
+        <div className="overflow-x-auto border-t border-line">
+          <table className="w-full text-sm">
+            <thead className="bg-page/70 text-left text-[13px] text-muted">
+              <tr>
+                <th className="px-5 py-2 font-semibold">Row</th>
+                <th className="px-3 py-2 font-semibold">Student</th>
+                <th className="px-3 py-2 font-semibold">{kind === 'error' ? 'Issue' : 'Outcome'}</th>
+                {kind === 'error' && <th className="px-3 py-2 font-semibold">Suggested fix</th>}
+                <th className="px-5 py-2" />
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-line">
+              {items.map(({ rr, flag }) => (
+                <tr key={rr.row.rowNo} className="align-top">
+                  <td className="px-5 py-3 text-muted tnum">{rr.row.rowNo}</td>
+                  <td className="px-3 py-3">
+                    <p className="font-medium text-ink">{rr.row.NAME}</p>
+                    <p className="text-xs text-muted">{rr.row.INST_STUDENT_ID}, {rr.row.PROGRAMME}</p>
+                  </td>
+                  <td className="px-3 py-3 text-ink">
+                    {isNri ? (
+                      <span className={`inline-flex items-center gap-2 rounded px-2 py-1 text-xs font-semibold transition-all duration-500 ${resolved ? 'bg-ok-bg text-igreen' : 'bg-err-bg text-err'}`}>
+                        {resolved ? 'Converted NRI seat, valid' : 'NRI quota, Indian resident?'}
+                      </span>
+                    ) : flag.message}
+                    {isNri && resolved && <p className="mt-1 text-xs text-muted">Vacant NRI seats are filled by general merit candidates at the regular fee.</p>}
+                  </td>
+                  {kind === 'error' && <td className="px-3 py-3 text-muted">{flag.fix?.label ?? 'Correct in source file'}</td>}
+                  <td className="px-5 py-3 text-right">
+                    <button className={btn.ghost} onClick={() => onOpen(rr.row.rowNo)}>View</button>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
+    </div>
+  )
+}
+
+function RowDrawer({ rr, onClose, onFix }: { rr: RowResult; onClose: () => void; onFix: (f: Flag) => void }) {
+  useEffect(() => {
+    const k = (e: KeyboardEvent) => e.key === 'Escape' && onClose()
+    window.addEventListener('keydown', k)
+    return () => window.removeEventListener('keydown', k)
+  }, [onClose])
+  const flaggedFields = new Set(rr.flags.map((f) => f.field).filter(Boolean))
+  return (
+    <div className="fixed inset-0 z-40 flex justify-end" role="dialog" aria-modal="true" aria-label={`Row ${rr.row.rowNo}`}>
+      <button className="absolute inset-0 bg-slate-900/30" onClick={onClose} aria-label="Close" />
+      <div className="relative flex h-full w-full max-w-md animate-[slideIn_.25s_ease-out] flex-col bg-white shadow-xl">
+        <div className="flex items-start justify-between border-b border-line px-6 py-5">
+          <div>
+            <p className="text-sm text-muted tnum">Row {rr.row.rowNo}</p>
+            <h2 className="text-xl font-semibold text-ink">{rr.row.NAME}</h2>
+            <p className="text-sm text-muted">{rr.row.INST_STUDENT_ID}, {rr.row.PROGRAMME}</p>
+          </div>
+          <button onClick={onClose} className="rounded p-1 text-2xl leading-none text-muted hover:text-ink" aria-label="Close">×</button>
+        </div>
+        <div className="flex-1 overflow-y-auto px-6 py-5">
+          {rr.flags.length === 0 && <p className="rounded bg-ok-bg px-4 py-3 text-sm font-semibold text-igreen">✓ This row is clean</p>}
+          {rr.flags.map((f, i) => (
+            <div key={i} className={`mb-4 rounded border p-4 ${f.kind === 'error' ? 'border-err/30 bg-err-bg' : f.kind === 'alert' ? 'border-warn-line bg-warn-bg' : 'border-info/30 bg-info-bg'}`}>
+              <div className="flex flex-wrap items-center gap-2">
+                <RuleChip rule={f.rule} kind={f.kind} />
+                <span className="font-semibold text-ink">{RULE_INFO[f.rule].title}</span>
+              </div>
+              <p className="mt-2 text-sm text-ink">{f.message}</p>
+              {RULE_INFO[f.rule].clause && <div className="mt-2"><ClauseChip clause={RULE_INFO[f.rule].clause!} /></div>}
+              {f.kind === 'error' && f.fix && (
+                <button className={`${btn.primary} mt-3 w-full`} onClick={() => onFix(f)}>{f.fix.label}</button>
+              )}
+              {f.kind === 'alert' && (
+                <p className="mt-3 flex items-center gap-2 text-sm font-medium text-warn">
+                  <LockIcon /> Shared with AICTE. Cannot be cleared by the institution.
+                </p>
+              )}
+            </div>
+          ))}
+          <h3 className="mt-6 text-xs font-semibold text-muted">Record</h3>
+          <dl className="mt-2 divide-y divide-line rounded border border-line text-sm">
+            {COLUMNS.map((c) => {
+              const v = rr.row[c]
+              const shown = c === 'APAAR_ID' && v ? (flaggedFields.has('APAAR_ID') ? v : formatApaar(v)) : v
+              return (
+                <div key={c} className={`flex justify-between gap-4 px-3 py-2 ${flaggedFields.has(c) ? 'bg-err-bg' : ''}`}>
+                  <dt className="font-mono text-xs text-muted">{c}</dt>
+                  <dd className={`text-right ${flaggedFields.has(c) ? 'font-semibold text-err' : 'text-ink'}`}>{shown || '—'}</dd>
+                </div>
+              )
+            })}
+          </dl>
+          {rr.flags.some((f) => f.rule === 'R10') && (
+            <p className="mt-3 text-xs text-muted">APAAR shown to AICTE as {maskApaar(rr.row.APAAR_ID)}</p>
+          )}
+        </div>
+      </div>
+    </div>
+  )
+}
