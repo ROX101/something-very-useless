@@ -29,7 +29,8 @@ server/   Express API (TypeScript), bundled with esbuild
 - The rules engine (`src/inst/engine/rules.ts`) is shared: the browser runs it for instant preview, and the server runs it again on submit. The server's result is the official one.
 - Sessions are an httpOnly, Secure, SameSite=Lax cookie holding an HS256 JWT. Roles and the `@aicte-india.org` domain rule are enforced on the server.
 - Every write goes to `audit_log`, where each entry holds the SHA-256 of the previous one. `GET /api/aicte/audit/verify` re-checks the chain.
-- Migrations run on every boot. Demo data loads on the first boot when the database is empty (`SEED_ON_BOOT`).
+- Migrations run on every boot. On the first boot with an empty database (`SEED_ON_BOOT`), the server loads only what the demo logins need: the 7 accounts, the Aranya institution and its programmes, plus stand-ins for the external systems (a mock APAAR registry and one issued degree). There is no activity data: alerts, consent requests, submissions and national figures all start at zero and come from real use.
+- Migration `0001` removes the sample activity data seeded by earlier versions (sample alerts, request RQ-1001, the fake cross-enrolment) from existing databases.
 
 ## Deploy on Railway
 1. **New Project → Deploy from GitHub repo**, and pick this repository/branch. `railway.json` makes Railway build with the `Dockerfile` and health-check `/api/health`.
@@ -84,7 +85,7 @@ Sign in as `nodal@aranya-tech.edu.in` (or `operator@…`, who cannot submit).
 | Seat ledger | /inst/ledger |
 | Submit to AICTE | /inst/submit |
 
-`npm test` and `npm run test:api` check: 509 rows → 481 clean / 18 need action / 10 auto-cleared; after the 12 suggested fixes → 507 records and 3 compliance alerts. The server must produce the same result as the browser.
+On a fresh database the sample file gives 509 rows → 482 clean / 17 need action / 10 auto-cleared; after the 12 suggested fixes → 507 records and 2 compliance alerts (R06, R07). R10 (cross-enrolment) fires only once another institution has submitted the same APAAR ID. The server and the browser preview must agree; `npm run test:api` checks this.
 `npm run sample` regenerates the sample Excel file (deterministic).
 
 ## Student and verifier

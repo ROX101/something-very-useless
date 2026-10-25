@@ -1,4 +1,4 @@
-import { useState, type FormEvent } from 'react'
+import { useEffect, useState, type FormEvent } from 'react'
 import { Link, useNavigate, useLocation } from 'react-router-dom'
 import { PublicLayout } from '../ui/PublicLayout'
 import { useT } from '../i18n'
@@ -32,6 +32,7 @@ export default function Login() {
   const [demoOpen, setDemoOpen] = useState(false)
 
   const from = (location.state as { from?: string } | null)?.from
+  useEffect(() => { document.title = 'Sign in · APAAR-Sathi' }, [])
 
   async function onSubmit(e: FormEvent) {
     e.preventDefault()

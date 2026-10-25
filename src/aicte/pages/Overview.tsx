@@ -3,22 +3,21 @@ import { useMemo } from 'react'
 import { AicteLayout, RULE_NAME } from '../ui/AicteLayout'
 import { Clause, CountUp, Notice, PageTitle, Panel, btn, daysUntil, formatDate, td, th } from '../../inst/ui/bits'
 import { DEADLINE } from '../../inst/data/reference'
-import { STATES } from '../states'
-import { AY, WATCHLIST } from '../data'
-import { statusOf, useAllAlerts, useCases, useKpis, useLiveSubmission } from '../store'
+import { withStats } from '../states'
+import { AY } from '../data'
+import { statusOf, useAllAlerts, useCases, useInsights, useKpis } from '../store'
 import { TileMap } from '../ui/TileMap'
 
 export default function Overview() {
   const k = useKpis()
-  const live = useLiveSubmission()
+  const insights = useInsights()
   const alerts = useAllAlerts()
   const actions = useCases((s) => s.actions)
   const days = daysUntil(DEADLINE)
 
-  const states = useMemo(() => STATES.map((s) => (s.code === 'MH' && live
-    ? { ...s, submitted: s.submitted + 1, excessAlerts: s.excessAlerts + (live.excess > 0 ? 1 : 0), openAlerts: s.openAlerts + live.alerts.length }
-    : s)), [live])
-  const top = [...states].sort((a, b) => b.excessAlerts - a.excessAlerts).slice(0, 10)
+  const states = useMemo(() => withStats(insights.states), [insights.states])
+  const watchlist = insights.watchlist.slice(0, 5)
+  const top = states.filter((s) => s.institutions > 0).sort((a, b) => b.excessAlerts - a.excessAlerts || b.institutions - a.institutions).slice(0, 10)
   const pct = (a: number, b: number) => (b ? Math.round((a / b) * 1000) / 10 : 0)
 
   return (
@@ -31,13 +30,13 @@ export default function Overview() {
         </Notice>
 
         <div className="grid grid-cols-2 rounded border border-line bg-white lg:grid-cols-4">
-          <Kpi label="Institutions in scope" value={k.institutions} note="AICTE-approved, 2026-27" />
+          <Kpi label="Institutions in scope" value={k.institutions} note="Registered on APAAR-Sathi" />
           <Kpi label="Returns submitted" value={k.submitted} note={`${pct(k.submitted, k.institutions)}% of institutions`} />
           <Kpi label="Student records received" value={k.records} />
           <Kpi label="APAAR-linked" text={`${k.apaarLinkedPct}%`} note={`${k.exceptionPct}% with an exception code`} />
           <Kpi label="Open compliance alerts" value={k.openAlerts} tone="text-warn" />
           <Kpi label="Cross-institution duplicates" value={k.crossDuplicates} tone="text-err" />
-          <Kpi label="Institutions on watch-list" value={WATCHLIST.length} />
+          <Kpi label="Institutions on watch-list" value={insights.watchlist.length} />
           <Kpi label="Days to deadline" value={days} />
         </div>
 
@@ -56,6 +55,7 @@ export default function Overview() {
                 </tr>
               </thead>
               <tbody className="divide-y divide-line">
+                {!top.length && <tr><td colSpan={4} className="px-4 py-8 text-center text-muted">No institutions registered yet.</td></tr>}
                 {top.map((s) => (
                   <tr key={s.code}>
                     <td className="px-4 py-2.5">{s.name}</td>
@@ -81,6 +81,7 @@ export default function Overview() {
                 </tr>
               </thead>
               <tbody className="divide-y divide-line">
+                {!alerts.length && <tr><td colSpan={4} className="px-4 py-8 text-center text-muted">No compliance alerts yet. They appear here when an institution submits.</td></tr>}
                 {alerts.slice(0, 7).map((a) => (
                   <tr key={a.id} className={a.live ? 'bg-warn-bg/60' : ''}>
                     <td className={`${td} whitespace-nowrap text-sm text-muted`}>{formatDate(a.detected)}</td>
@@ -110,8 +111,9 @@ export default function Overview() {
               </tr>
             </thead>
             <tbody className="divide-y divide-line">
-              {WATCHLIST.map((w) => (
-                <tr key={w.institution}>
+              {!watchlist.length && <tr><td colSpan={3} className="px-4 py-8 text-center text-muted">No institution has open alerts.</td></tr>}
+              {watchlist.map((w) => (
+                <tr key={w.pid}>
                   <td className={td}><p className="font-semibold">{w.institution}</p><p className="text-sm text-muted">{w.city}, {w.state}</p></td>
                   <td className={`${td} text-muted`}>{w.reason}</td>
                   <td className={td}>

@@ -1,7 +1,7 @@
 import { Router } from 'express'
 import { and, desc, eq, inArray, sql } from 'drizzle-orm'
 import { z } from 'zod'
-import { BASE } from '../../src/aicte/data'
+import { insights, kpis } from '../services/insights'
 import type { Db } from '../db/client'
 import { alertActions, auditLog, complianceAlerts, submissions } from '../db/schema'
 import { audit, verifyChain } from '../lib/audit'
@@ -85,31 +85,17 @@ export function aicteRoutes() {
   }))
 
   r.get('/kpis', officers, handler(async (req, res) => {
-    const agg = await req.db.execute<{ institutions: number; records: number; alerts: number }>(sql`
-      select count(*)::int as institutions, coalesce(sum(records), 0)::int as records, coalesce(sum(alerts), 0)::int as alerts
-      from (select distinct on (institution_pid) institution_pid, records, alerts from submissions order by institution_pid, submitted_at desc) s`)
-    const dup = await req.db.execute<{ n: number }>(sql`
-      select count(*)::int as n from (select apaar from enrolments group by apaar, ay having count(distinct institution_pid) > 1) d`)
-    const live = agg.rows[0]
-    res.json({
-      institutions: BASE.institutions,
-      submitted: BASE.submitted + live.institutions,
-      records: BASE.records + live.records,
-      apaarLinkedPct: BASE.apaarLinkedPct,
-      exceptionPct: BASE.exceptionPct,
-      openAlerts: BASE.openAlerts + live.alerts,
-      crossDuplicates: BASE.crossDuplicates + dup.rows[0].n,
-    })
+    res.json(await kpis(req.db, stateFilter(req.user!)))
+  }))
+
+  /** Per-state figures, risk watch-list and cross-institution rings, all computed from live data. */
+  r.get('/insights', officers, handler(async (req, res) => {
+    res.json(await insights(req.db, stateFilter(req.user!)))
   }))
 
   /** Cross-institution duplicates: same APAAR ID actively enrolled at two or more institutions in the same AY. */
   r.get('/rings', officers, handler(async (req, res) => {
-    const pairs = await req.db.execute<{ a_pid: string; a_name: string; b_pid: string; b_name: string; students: number; apaars: string[] }>(sql`
-      select a.institution_pid as a_pid, a.institution as a_name, b.institution_pid as b_pid, b.institution as b_name,
-             count(*)::int as students, array_agg(a.apaar order by a.apaar) as apaars
-      from enrolments a join enrolments b on a.apaar = b.apaar and a.ay = b.ay and a.institution_pid < b.institution_pid
-      group by 1, 2, 3, 4 order by students desc`)
-    res.json(pairs.rows.map((p) => ({ from: { pid: p.a_pid, name: p.a_name }, to: { pid: p.b_pid, name: p.b_name }, students: p.students, apaars: p.apaars })))
+    res.json((await insights(req.db, stateFilter(req.user!))).rings)
   }))
 
   r.get('/audit', requireRole('aicte_bureau', 'aicte_admin'), handler(async (req, res) => {

@@ -3,12 +3,13 @@ import { createHash } from 'node:crypto'
 import { and, desc, eq } from 'drizzle-orm'
 import { z } from 'zod'
 import { COLUMNS, type UploadRow } from '../../src/inst/engine/types'
+import { runRules } from '../../src/inst/engine/rules'
 import { complianceAlerts, enrolments, institutions, programmes, submissions, uploads } from '../db/schema'
 import { audit } from '../lib/audit'
 import { requireRole } from '../lib/auth'
 import { badRequest, conflict, forbidden, handler, notFound, parse } from '../lib/http'
 import { next } from '../lib/counters'
-import { validate } from '../services/validation'
+import { buildContext, validate } from '../services/validation'
 
 const MAX_ROWS = 20000
 const AY = '2026-27'
@@ -47,10 +48,12 @@ export function instRoutes() {
       currentUpload(req.db, pid),
       req.db.select().from(submissions).where(eq(submissions.institutionPid, pid)).orderBy(desc(submissions.submittedAt)),
     ])
+    const crossEnrolments = upload ? (await buildContext(req.db, pid, upload.rows)).otherEnrolments : []
     res.json({
       institution: inst,
       programmes: progs,
       upload: upload && { id: upload.id, fileName: upload.fileName, rows: upload.rows, uploadedAt: upload.uploadedAt, fixesApplied: upload.fixesApplied },
+      crossEnrolments,
       submissions: subs.map(toSubmission),
     })
   }))
@@ -64,8 +67,13 @@ export function instRoutes() {
       await audit(tx, req.user!, { action: 'upload.create', entity: 'upload', entityId: String(u.id), payload: { fileName: body.fileName, rows: body.rows.length } })
       return u
     })
-    const result = await validate(req.db, pid, created.rows)
-    res.status(201).json({ upload: { id: created.id, fileName: created.fileName, uploadedAt: created.uploadedAt, fixesApplied: 0 }, result })
+    const ctx = await buildContext(req.db, pid, created.rows)
+    const result = runRules(created.rows, ctx)
+    res.status(201).json({
+      upload: { id: created.id, fileName: created.fileName, uploadedAt: created.uploadedAt, fixesApplied: 0 },
+      crossEnrolments: ctx.otherEnrolments,
+      result,
+    })
   }))
 
   r.put('/uploads/current/rows', handler(async (req, res) => {
@@ -78,7 +86,7 @@ export function instRoutes() {
       await tx.update(uploads).set({ rows: body.rows, fixesApplied, updatedAt: new Date().toISOString() }).where(eq(uploads.id, u.id))
       await audit(tx, req.user!, { action: 'upload.fix', entity: 'upload', entityId: String(u.id), payload: { fixes: body.fixes, rows: body.rows.length } })
     })
-    res.json({ fixesApplied })
+    res.json({ fixesApplied, crossEnrolments: (await buildContext(req.db, pid, body.rows)).otherEnrolments })
   }))
 
   r.delete('/uploads/current', handler(async (req, res) => {

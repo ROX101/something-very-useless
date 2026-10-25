@@ -2,9 +2,9 @@ import { useMemo, useState } from 'react'
 import * as XLSX from 'xlsx'
 import { AicteLayout } from '../ui/AicteLayout'
 import { Clause, PageTitle, Panel, btn, formatDate, td, th } from '../../inst/ui/bits'
-import { STATES, type StateRow } from '../states'
+import { withStats, type StateRow } from '../states'
 import { AY } from '../data'
-import { useAllAlerts, useLiveSubmission } from '../store'
+import { useAllAlerts, useInsights } from '../store'
 import { sha256 } from '../../inst/store'
 
 type Kind = 'submission' | 'apaar' | 'excess'
@@ -32,7 +32,7 @@ interface Report {
 
 export default function Reports() {
   const alerts = useAllAlerts()
-  const live = useLiveSubmission()
+  const insights = useInsights()
   const [kind, setKind] = useState<Kind>('submission')
   const [state, setState] = useState('')
   const [profile, setProfile] = useState(PROFILES[0])
@@ -40,7 +40,7 @@ export default function Reports() {
   const [busy, setBusy] = useState(false)
   const [api, setApi] = useState(false)
 
-  const states = useMemo(() => STATES.filter((s) => s.institutions > 0).map((s) => (s.code === 'MH' && live ? { ...s, submitted: s.submitted + 1 } : s)), [live])
+  const states = useMemo(() => withStats(insights.states).filter((s) => s.institutions > 0), [insights.states])
 
   async function generate() {
     setBusy(true)

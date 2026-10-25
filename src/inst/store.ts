@@ -1,6 +1,6 @@
 import { create } from 'zustand'
 import { useMemo } from 'react'
-import type { UploadRow } from './engine/types'
+import type { OtherEnrolment, UploadRow } from './engine/types'
 import { runRules } from './engine/rules'
 import { RULE_CONTEXT } from './data/dataset'
 import { api } from '../api'
@@ -18,6 +18,7 @@ export interface Submission {
 }
 
 interface ServerState {
+  crossEnrolments: OtherEnrolment[]
   upload: { id: number; fileName: string; rows: UploadRow[]; uploadedAt: string; fixesApplied: number } | null
   submissions: Submission[]
 }
@@ -28,6 +29,8 @@ interface Data {
   uploadedAt: string | null
   fixesApplied: number
   submissions: Submission[]
+  /** Students in this upload who are enrolled at another institution, as known to the server (R10). */
+  crossEnrolments: OtherEnrolment[]
   loaded: boolean
   /** Last failed save, shown by InstLayout so nothing fails silently. */
   error: string | null
@@ -42,7 +45,7 @@ interface InstState extends Data {
   dismissError: () => void
 }
 
-const empty: Data = { fileName: null, rows: null, uploadedAt: null, fixesApplied: 0, submissions: [], loaded: false, error: null }
+const empty: Data = { fileName: null, rows: null, uploadedAt: null, fixesApplied: 0, submissions: [], crossEnrolments: [], loaded: false, error: null }
 
 // Writes are queued so a fix applied right after an upload never reaches the server before the upload itself.
 let queue: Promise<unknown> = Promise.resolve()
@@ -65,6 +68,7 @@ export const useInst = create<InstState>((set, get) => ({
         uploadedAt: s.upload?.uploadedAt ?? null,
         fixesApplied: s.upload?.fixesApplied ?? 0,
         submissions: s.submissions,
+        crossEnrolments: s.crossEnrolments,
         loaded: true,
       })
     } catch (e) {
@@ -73,21 +77,21 @@ export const useInst = create<InstState>((set, get) => ({
   },
 
   setUpload: (fileName, rows) => {
-    set({ fileName, rows, uploadedAt: new Date().toISOString(), fixesApplied: 0, error: null })
-    enqueue(() => api.post<{ upload: { uploadedAt: string } }>('/inst/uploads', { fileName, rows }))
-      .then((r) => set({ uploadedAt: r.upload.uploadedAt }))
+    set({ fileName, rows, uploadedAt: new Date().toISOString(), fixesApplied: 0, crossEnrolments: [], error: null })
+    enqueue(() => api.post<{ upload: { uploadedAt: string }; crossEnrolments: OtherEnrolment[] }>('/inst/uploads', { fileName, rows }))
+      .then((r) => set({ uploadedAt: r.upload.uploadedAt, crossEnrolments: r.crossEnrolments }))
       .catch((e: Error) => set({ error: `Upload was not saved: ${e.message}` }))
   },
 
   setRows: (rows, fixes) => {
     set({ rows, fixesApplied: get().fixesApplied + fixes, error: null })
-    enqueue(() => api.put<{ fixesApplied: number }>('/inst/uploads/current/rows', { rows, fixes }))
-      .then((r) => set({ fixesApplied: r.fixesApplied }))
+    enqueue(() => api.put<{ fixesApplied: number; crossEnrolments: OtherEnrolment[] }>('/inst/uploads/current/rows', { rows, fixes }))
+      .then((r) => set({ fixesApplied: r.fixesApplied, crossEnrolments: r.crossEnrolments }))
       .catch((e: Error) => set({ error: `Fix was not saved: ${e.message}` }))
   },
 
   clearUpload: () => {
-    set({ fileName: null, rows: null, uploadedAt: null, fixesApplied: 0, error: null })
+    set({ fileName: null, rows: null, uploadedAt: null, fixesApplied: 0, crossEnrolments: [], error: null })
     enqueue(() => api.del('/inst/uploads/current')).catch((e: Error) => set({ error: e.message }))
   },
 
@@ -105,7 +109,11 @@ onSignOut(() => useInst.setState(empty))
 /** Instant in-browser preview. The server re-runs the same rules on submit and its result is authoritative. */
 export function useValidation() {
   const rows = useInst((s) => s.rows)
-  return useMemo(() => (rows ? runRules(rows, RULE_CONTEXT) : null), [rows])
+  const crossEnrolments = useInst((s) => s.crossEnrolments)
+  return useMemo(
+    () => (rows ? runRules(rows, { ...RULE_CONTEXT, otherEnrolments: crossEnrolments }) : null),
+    [rows, crossEnrolments],
+  )
 }
 
 export async function sha256(text: string): Promise<string> {

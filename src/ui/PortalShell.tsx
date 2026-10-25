@@ -1,4 +1,4 @@
-import type { ReactNode } from 'react'
+import { useEffect, type ReactNode } from 'react'
 import { Link, NavLink, useNavigate } from 'react-router-dom'
 import { useApp } from '../store'
 import { ROLE_LABEL } from '../auth/directory'
@@ -8,6 +8,9 @@ export interface PortalNavItem { to: string; label: string; end?: boolean; done?
 export function PortalShell({ children, nav = [], context, logo, showOrg = true }: { children: ReactNode; nav?: PortalNavItem[]; context?: ReactNode; logo?: ReactNode; showOrg?: boolean }) {
   const { account, signOut, lang, setLang } = useApp()
   const navigate = useNavigate()
+  useEffect(() => {
+    document.title = account ? `${ROLE_LABEL[account.role]} · APAAR-Sathi` : 'APAAR-Sathi'
+  }, [account])
   if (!account) return null
 
   return (
