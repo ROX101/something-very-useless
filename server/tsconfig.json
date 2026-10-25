@@ -1,0 +1,17 @@
+{
+  "compilerOptions": {
+    "target": "ES2022",
+    "lib": ["ES2022", "DOM"],
+    "module": "ESNext",
+    "moduleResolution": "bundler",
+    "strict": true,
+    "skipLibCheck": true,
+    "noEmit": true,
+    "isolatedModules": true,
+    "resolveJsonModule": true,
+    "esModuleInterop": true,
+    "types": ["node"]
+  },
+  "include": ["./**/*.ts", "../src/inst/engine/*.ts", "../src/inst/data/*.ts", "../src/auth/directory.ts", "../src/aicte/data.ts", "../src/verify/credentials.ts"],
+  "exclude": ["./dist", "../src/**/*.test.ts"]
+}

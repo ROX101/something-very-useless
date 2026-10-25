@@ -1,0 +1,80 @@
+import { Router } from 'express'
+import { and, desc, eq } from 'drizzle-orm'
+import { decodeJwt } from 'jose'
+import { z } from 'zod'
+import { apaarRegistry, credentials, verificationRequests } from '../db/schema'
+import { audit } from '../lib/audit'
+import { requireRole } from '../lib/auth'
+import { next } from '../lib/counters'
+import { badRequest, conflict, handler, notFound, parse } from '../lib/http'
+import { activeConsent, expireStale, log, toClient } from '../services/consent'
+
+const NewRequest = z.object({
+  apaar: z.string().transform((s) => s.replace(/\s/g, '')).pipe(z.string().regex(/^\d{12}$/, 'Enter a 12-digit APAAR ID')),
+  purpose: z.string().min(3).max(200),
+  validityDays: z.number().int().min(1).max(90),
+})
+
+interface Subject { name?: string; degree?: string; year?: number }
+
+export function verifierRoutes() {
+  const r = Router()
+  r.use(requireRole('verifier'))
+
+  r.get('/requests', handler(async (req, res) => {
+    await expireStale(req.db)
+    const rows = await req.db.select().from(verificationRequests).where(eq(verificationRequests.verifierOrg, req.user!.org)).orderBy(desc(verificationRequests.createdAt))
+    res.json(rows.map(toClient))
+  }))
+
+  r.post('/requests', handler(async (req, res) => {
+    const body = parse(NewRequest, req.body)
+    const student = await req.db.query.apaarRegistry.findFirst({ where: eq(apaarRegistry.apaar, body.apaar) })
+    if (!student) throw notFound('No student found with this APAAR ID')
+    const pending = await req.db.query.verificationRequests.findFirst({
+      where: and(eq(verificationRequests.apaar, body.apaar), eq(verificationRequests.verifierOrg, req.user!.org), eq(verificationRequests.status, 'Pending')),
+    })
+    if (pending) throw conflict('already_pending', 'A request to this student is already waiting for a decision')
+
+    const created = await req.db.transaction(async (tx) => {
+      const id = `RQ-${await next(tx, 'request', 1001)}`
+      const [row] = await tx.insert(verificationRequests).values({
+        id, apaar: body.apaar, verifierUserId: req.user!.userId, verifier: req.user!.name, verifierOrg: req.user!.org,
+        purpose: body.purpose, validityDays: body.validityDays,
+      }).returning()
+      await log(tx, body.apaar, req.user!.org, 'Requested to verify your degree')
+      await audit(tx, req.user!, { action: 'consent.request', entity: 'verification_request', entityId: id, payload: { apaar: body.apaar, purpose: body.purpose } })
+      return row
+    })
+    res.status(201).json(toClient(created))
+  }))
+
+  /** Consent-gated read. Returns only the shared fields, and every read is written to the student's access log. */
+  r.get('/records/:apaar', handler(async (req, res) => {
+    const apaar = req.params.apaar.replace(/\s/g, '')
+    if (!/^\d{12}$/.test(apaar)) throw badRequest('invalid_apaar', 'Enter a 12-digit APAAR ID')
+    const consent = await activeConsent(req.db, apaar, req.user!.org)
+    if (!consent) {
+      res.status(403).json({ error: 'no_consent', message: 'The student has not allowed your organisation to see the details' })
+      return
+    }
+    const [cred] = await req.db.select().from(credentials).where(eq(credentials.apaar, apaar)).orderBy(desc(credentials.issuedAt)).limit(1)
+    const reg = await req.db.query.apaarRegistry.findFirst({ where: eq(apaarRegistry.apaar, apaar) })
+    const subject = cred ? ((decodeJwt(cred.jws).vc as { credentialSubject?: Subject } | undefined)?.credentialSubject ?? {}) : {}
+
+    await log(req.db, apaar, req.user!.org, `Viewed your degree status (${consent.consentNo})`)
+    await audit(req.db, req.user!, { action: 'record.view', entity: 'student', entityId: apaar, payload: { consentNo: consent.consentNo } })
+
+    res.json({
+      consentNo: consent.consentNo,
+      expiresAt: consent.expiresAt,
+      name: subject.name ?? reg?.name,
+      degree: subject.degree ?? null,
+      year: subject.year ?? null,
+      status: cred ? (cred.revoked ? 'Revoked' : 'Awarded') : 'No degree on record',
+      certNo: cred?.certNo ?? null,
+    })
+  }))
+
+  return r
+}
