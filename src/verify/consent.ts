@@ -1,5 +1,6 @@
 import { create } from 'zustand'
 import { push, shared } from '../sync'
+import { audit } from '../audit/log'
 
 export const SHARED_FIELDS = ['Name', 'Degree', 'Year of award', 'Award status']
 export const PRIVATE_FIELDS = ['Marks and CGPA', 'Category', 'Address', 'Date of birth']
@@ -103,6 +104,7 @@ export const useConsent = create<ConsentState>((set, get) => ({
     const expiresAt = status === 'Approved' ? new Date(now.getTime() + r.validityDays * 86400000).toISOString() : undefined
     const requests = s.requests.map((x) => (x.id === id ? { ...x, status, decidedAt: now.toISOString(), consentNo, expiresAt } : x))
     const log = [{ id: `LG-${Date.now()}`, at: now.toISOString(), actor: 'You', action: status === 'Approved' ? `Allowed ${r.verifierOrg} to verify your degree (${consentNo})` : `Refused the request from ${r.verifierOrg}` }, ...s.log]
+    audit('Consent', status === 'Approved' ? 'Allowed verification' : 'Refused verification', `${r.verifierOrg}, ${r.purpose}${consentNo ? `, ${consentNo} valid ${r.validityDays} days` : ''}`)
     set({ requests, log, seq: status === 'Approved' ? s.seq + 1 : s.seq })
     save(pick(get()))
   },
@@ -112,6 +114,7 @@ export const useConsent = create<ConsentState>((set, get) => ({
     if (!r) return
     const requests = s.requests.map((x) => (x.id === id ? { ...x, status: 'Revoked' as const, decidedAt: new Date().toISOString() } : x))
     const log = [{ id: `LG-${Date.now()}`, at: new Date().toISOString(), actor: 'You', action: `Revoked consent ${r.consentNo} for ${r.verifierOrg}` }, ...s.log]
+    audit('Consent', 'Revoked consent', `${r.consentNo}, ${r.verifierOrg}`)
     set({ requests, log })
     save(pick(get()))
   },
@@ -119,6 +122,7 @@ export const useConsent = create<ConsentState>((set, get) => ({
     const s = get()
     const now = new Date().toISOString()
     const req: VerificationRequest = { ...r, id: `RQ-${Date.now()}`, createdAt: now, status: 'Pending' }
+    audit('Consent', 'Requested consent', `APAAR ${r.apaar.slice(0, 4)} •••• ••${r.apaar.slice(-2)}, ${r.purpose}, ${r.reference}`)
     set({ requests: [req, ...s.requests], log: [{ id: `LG-${Date.now()}`, at: now, actor: r.verifierOrg, action: 'Requested to verify your degree' }, ...s.log] })
     save(pick(get()))
   },

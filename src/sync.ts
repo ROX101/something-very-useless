@@ -47,6 +47,15 @@ export function shared(key: string, apply: Apply, current: () => unknown) {
     .catch(() => { online = false })
 }
 
+export function subscribe(key: string, apply: Apply) {
+  appliers.set(key, apply)
+  connect()
+  fetch(`/api/state/${key}`, { cache: 'no-store' })
+    .then((r) => (r.ok ? r.json() : Promise.reject(new Error('offline'))))
+    .then((d: { value: unknown }) => { online = true; if (d.value !== null && d.value !== undefined) apply(d.value) })
+    .catch(() => { online = false })
+}
+
 export function push(key: string, value: unknown) {
   fetch(`/api/state/${key}`, {
     method: 'PUT',

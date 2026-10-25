@@ -10,7 +10,7 @@ export function Crest({ size = 72 }: { size?: number }) {
         <path id={`top-${id}`} d="M 16 60 A 44 44 0 0 1 104 60" />
         <path id={`bot-${id}`} d="M 9 60 A 51 51 0 0 0 111 60" />
       </defs>
-      <circle cx="60" cy="60" r="58" fill="#14235A" />
+      <circle cx="60" cy="60" r="58" fill="#111111" />
       <circle cx="60" cy="60" r="54.5" fill="none" stroke="#E07B1A" strokeWidth="1.6" />
       <circle cx="60" cy="60" r="36" fill="#FFFFFF" />
       {!small && (
@@ -22,7 +22,7 @@ export function Crest({ size = 72 }: { size?: number }) {
         </g>
       )}
       <path d="M60 34 L64 42 L60 40 L56 42 Z" fill="#E07B1A" />
-      <text x="60" y="68" textAnchor="middle" fill="#14235A" fontFamily="IBM Plex Serif, Georgia, serif" fontSize="22" fontWeight="500">
+      <text x="60" y="68" textAnchor="middle" fill="#111111" fontFamily="IBM Plex Serif, Georgia, serif" fontSize="22" fontWeight="500">
         {INSTITUTION.initials}
       </text>
       <path d="M44 76 Q60 84 76 76" fill="none" stroke="#1D6F42" strokeWidth="2.2" strokeLinecap="round" />

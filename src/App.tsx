@@ -1,7 +1,7 @@
 import { Navigate, Route, Routes, useLocation } from 'react-router-dom'
 import type { ReactNode } from 'react'
 import { useEffect } from 'react'
-import Login from './pages/Login'
+import Login, { Register } from './pages/Login'
 import PortalHome from './pages/PortalHome'
 import InfoPage, { INFO } from './pages/InfoPage'
 import { useApp } from './store'
@@ -20,6 +20,7 @@ import StudentLog from './student/pages/Log'
 import VerifierVerify from './verifier/pages/Verify'
 import VerifierRequests from './verifier/pages/Requests'
 import Certificate from './pages/Certificate'
+import AuditTrail from './aicte/pages/AuditTrail'
 
 const INST: Role[] = ['inst_admin', 'inst_operator']
 
@@ -37,16 +38,17 @@ function LoginOrHome() {
 }
 
 export default function App() {
-  const { textSize, lang } = useApp()
+  const { lang } = useApp()
   useEffect(() => {
-    document.documentElement.style.fontSize = textSize === 'sm' ? '14px' : textSize === 'lg' ? '18px' : '16px'
+    document.documentElement.style.removeProperty('font-size')
     document.documentElement.lang = lang
-  }, [textSize, lang])
+  }, [lang])
 
   return (
     <Routes>
       <Route path="/" element={<LoginOrHome />} />
-      {(Object.keys(INFO) as (keyof typeof INFO)[]).map((id) => (
+      <Route path="/register" element={<Register />} />
+      {(Object.keys(INFO) as (keyof typeof INFO)[]).filter((id) => id !== 'register').map((id) => (
         <Route key={id} path={`/${id}`} element={<InfoPage id={id} />} />
       ))}
 
@@ -55,7 +57,7 @@ export default function App() {
       <Route path="/aicte/rings" element={<RequireRole roles={['aicte_bureau']}><AicteRings /></RequireRole>} />
       <Route path="/aicte/reports" element={<RequireRole roles={['aicte_bureau']}><AicteReports /></RequireRole>} />
       <Route path="/aicte/region" element={<RequireRole roles={['aicte_regional']}><PortalHome /></RequireRole>} />
-      <Route path="/aicte/admin" element={<RequireRole roles={['aicte_admin']}><PortalHome /></RequireRole>} />
+      <Route path="/aicte/admin" element={<RequireRole roles={['aicte_admin']}><AuditTrail /></RequireRole>} />
       <Route path="/inst" element={<RequireRole roles={INST}><InstDashboard /></RequireRole>} />
       <Route path="/inst/upload" element={<RequireRole roles={INST}><InstUpload /></RequireRole>} />
       <Route path="/inst/ledger" element={<RequireRole roles={INST}><InstLedger /></RequireRole>} />

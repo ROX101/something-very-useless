@@ -3,7 +3,7 @@ import { VERIFIER, VerifierLayout } from '../VerifierLayout'
 import { PageTitle, Panel, btn, formatDate, maskApaar, td, th } from '../../inst/ui/bits'
 import { PURPOSES, RETENTION, SHARED_FIELDS, useConsent } from '../../verify/consent'
 
-const input = 'h-11 w-full rounded border border-line bg-white px-3 text-[15px] focus:outline-none focus:ring-2 focus:ring-navy/30'
+const input = 'h-11 w-full rounded border border-line bg-white px-3 text-[0.9375rem] focus:outline-none focus:ring-2 focus:ring-navy/30'
 
 export default function Requests() {
   const { requests, request } = useConsent()
@@ -71,7 +71,7 @@ export default function Requests() {
 
         <Panel title="Your requests" className="min-w-0" flush>
           <div className="overflow-x-auto">
-            <table className="w-full text-[15px]">
+            <table className="w-full text-[0.9375rem]">
               <thead className="border-b border-line bg-page/60"><tr><th className={th}>Student</th><th className={th}>Purpose</th><th className={th}>Sent</th><th className={th}>Status</th></tr></thead>
               <tbody className="divide-y divide-line">
                 {mine.map((r) => (

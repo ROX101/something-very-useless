@@ -4,6 +4,7 @@ import { useInst, useValidation } from '../inst/store'
 import { INSTITUTION } from '../inst/data/reference'
 import { BASE, SAMPLE_ALERTS, type AicteAlert } from './data'
 import { push, shared } from '../sync'
+import { audit } from '../audit/log'
 
 export type CaseStatus = 'Open' | 'Referred to Regional Office' | 'Reviewed, no action'
 
@@ -33,6 +34,7 @@ interface CaseState {
 export const useCases = create<CaseState>((set, get) => ({
   actions: load(),
   act: (id, a) => {
+    audit('Compliance', a.status === 'Referred to Regional Office' ? 'Referred case to Regional Office' : a.status === 'Reviewed, no action' ? 'Closed case, no action' : 'Reopened case', `${id}${a.note ? `: ${a.note}` : ''}`)
     const actions = { ...get().actions, [id]: a }
     set({ actions })
     keep(actions)

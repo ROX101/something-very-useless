@@ -55,8 +55,8 @@ export function PageTitle({ title, sub, actions }: { title: string; sub?: ReactN
   return (
     <div className="mb-6 flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
       <div>
-        <h1 className="font-serif text-[28px] font-medium leading-tight text-ink">{title}</h1>
-        {sub && <p className="mt-1 text-[15px] text-muted">{sub}</p>}
+        <h1 className="font-serif text-[1.75rem] font-medium leading-tight text-ink">{title}</h1>
+        {sub && <p className="mt-1 text-[0.9375rem] text-muted">{sub}</p>}
       </div>
       {actions && <div className="flex flex-wrap gap-2">{actions}</div>}
     </div>
@@ -72,7 +72,7 @@ export function Notice({ tone, children, action }: { tone: 'deadline' | 'ok' | '
   }[tone]
   return (
     <div className={`flex flex-col gap-3 border-l-4 px-5 py-4 sm:flex-row sm:items-center sm:justify-between ${t}`} role={tone === 'err' ? 'alert' : undefined}>
-      <div className="text-[15px] text-ink">{children}</div>
+      <div className="text-[0.9375rem] text-ink">{children}</div>
       {action}
     </div>
   )
@@ -112,7 +112,7 @@ export function formatDate(iso: string) {
   return new Date(iso).toLocaleString('en-IN', { day: 'numeric', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit', timeZone: 'Asia/Kolkata' })
 }
 
-export const th = 'px-4 py-2.5 text-left text-[13px] font-semibold text-muted'
+export const th = 'px-4 py-2.5 text-left text-[0.8125rem] font-semibold text-muted'
 export const td = 'px-4 py-3 align-top'
 
 export const ClauseChip = Clause

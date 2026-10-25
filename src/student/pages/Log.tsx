@@ -9,7 +9,7 @@ export default function Log() {
       <PageTitle title="Access log" sub="Every request, decision and view of your record" />
       <Panel flush>
         <div className="overflow-x-auto">
-          <table className="w-full text-[15px]">
+          <table className="w-full text-[0.9375rem]">
             <thead className="border-b border-line bg-page/60"><tr><th className={th}>When</th><th className={th}>Who</th><th className={th}>What happened</th></tr></thead>
             <tbody className="divide-y divide-line">
               {log.map((e) => (
