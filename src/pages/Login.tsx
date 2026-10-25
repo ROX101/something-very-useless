@@ -3,7 +3,8 @@ import { Link, useNavigate, useLocation } from 'react-router-dom'
 import { PublicLayout } from '../ui/PublicLayout'
 import { useT } from '../i18n'
 import { useApp } from '../store'
-import { ACCOUNTS, DEMO_PASSWORD, ROLE_HOME, ROLE_LABEL, signIn } from '../auth/directory'
+import { ACCOUNTS, DEMO_PASSWORD, ROLE_HOME, ROLE_LABEL, type Account } from '../auth/directory'
+import { ApiError, api } from '../api'
 
 function EyeIcon({ off }: { off?: boolean }) {
   return (
@@ -32,7 +33,7 @@ export default function Login() {
 
   const from = (location.state as { from?: string } | null)?.from
 
-  function onSubmit(e: FormEvent) {
+  async function onSubmit(e: FormEvent) {
     e.preventDefault()
     const fe: typeof fieldErr = {}
     if (!userId.trim()) fe.userId = t.errUserIdReq
@@ -41,18 +42,23 @@ export default function Login() {
     setFormErr('')
     if (fe.userId || fe.password) return
 
-    const r = signIn(userId, password)
-    if (!r.ok) {
-      setFormErr(r.error === 'not_found' ? t.errNotFound : r.error === 'bad_password' ? t.errBadPassword : t.errDomain)
-      return
-    }
     setBusy(true)
-    setRememberedUserId(remember ? r.account.userId : '')
-    window.setTimeout(() => {
-      startSession(r.account)
-      const home = ROLE_HOME[r.account.role]
+    try {
+      const { account } = await api.post<{ account: Account }>('/auth/login', { userId, password })
+      setRememberedUserId(remember ? account.userId : '')
+      startSession(account)
+      const home = ROLE_HOME[account.role]
       nav(from && from.startsWith(home) ? from : home, { replace: true })
-    }, 600)
+    } catch (err) {
+      const code = err instanceof ApiError ? err.code : 'network'
+      setFormErr(
+        code === 'not_found' ? t.errNotFound
+          : code === 'bad_password' ? t.errBadPassword
+            : code === 'domain_policy' ? t.errDomain
+              : err instanceof Error ? err.message : String(err),
+      )
+      setBusy(false)
+    }
   }
 
   function fillDemo(id: string) {

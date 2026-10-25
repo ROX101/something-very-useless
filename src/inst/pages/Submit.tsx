@@ -2,16 +2,17 @@ import { useState } from 'react'
 import { Link } from 'react-router-dom'
 import { InstLayout } from '../ui/InstLayout'
 import { Card, ClauseChip, LockIcon, PageHeader, btn, formatDate } from '../ui/bits'
-import { sha256, useInst, useValidation, type Submission } from '../store'
+import { useInst, useValidation, type Submission } from '../store'
 import { INSTITUTION } from '../data/reference'
 import { useApp } from '../../store'
 
 export default function Submit() {
   const account = useApp((s) => s.account)!
-  const { rows, fileName, submissions, addSubmission } = useInst()
+  const { rows, fileName, submissions, submit: submitToAicte } = useInst()
   const result = useValidation()
   const [agree, setAgree] = useState(false)
   const [busy, setBusy] = useState(false)
+  const [submitErr, setSubmitErr] = useState('')
   const [revising, setRevising] = useState(false)
   const isNodal = account.role === 'inst_admin'
   const latest = submissions[0]
@@ -48,21 +49,16 @@ export default function Submit() {
   async function submit() {
     if (!result || !rows) return
     setBusy(true)
-    const hash = await sha256(JSON.stringify(rows))
-    await new Promise((r) => setTimeout(r, 1100))
-    const s: Submission = {
-      receiptNo: `AS-26-0417-${String(91 + submissions.length).padStart(4, '0')}`,
-      submittedAt: new Date().toISOString(),
-      submittedBy: `${account.name} (${account.userId})`,
-      records: result.counts.total,
-      alerts: result.alerts.length,
-      hash,
-      fileName: fileName ?? '',
+    setSubmitErr('')
+    try {
+      await submitToAicte()
+      setAgree(false)
+      setRevising(false)
+    } catch (e) {
+      setSubmitErr((e as Error).message)
+    } finally {
+      setBusy(false)
     }
-    addSubmission(s)
-    setBusy(false)
-    setAgree(false)
-    setRevising(false)
   }
 
   return (
@@ -118,6 +114,7 @@ export default function Submit() {
               {busy && <span className="h-4 w-4 animate-spin rounded-full border-2 border-white/40 border-t-white" aria-hidden />}
               {busy ? 'Submitting…' : `Submit ${result.counts.total.toLocaleString('en-IN')} records to AICTE`}
             </button>
+            {submitErr && <p role="alert" className="mt-3 text-sm text-err">{submitErr}</p>}
           </>
         ) : (
           <p className="mt-3 flex items-center gap-2 rounded bg-page px-4 py-3 text-sm text-ink">

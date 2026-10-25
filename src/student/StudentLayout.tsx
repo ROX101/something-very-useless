@@ -1,6 +1,7 @@
 import type { ReactNode } from 'react'
 import { PortalShell } from '../ui/PortalShell'
 import { useConsent } from '../verify/consent'
+import { useSync } from '../useSync'
 
 export const STUDENT = {
   name: 'Ritika Deshmukh',
@@ -12,6 +13,7 @@ export const STUDENT = {
 }
 
 export function StudentLayout({ children }: { children: ReactNode }) {
+  useSync(useConsent((s) => s.hydrate), 4000)
   const pending = useConsent((s) => s.requests.filter((r) => r.apaar === STUDENT.apaar && r.status === 'Pending').length)
   return (
     <PortalShell

@@ -14,14 +14,18 @@ export default function Requests() {
   const [err, setErr] = useState('')
   const [sent, setSent] = useState(false)
 
-  function submit(e: FormEvent) {
+  async function submit(e: FormEvent) {
     e.preventDefault()
     const d = apaar.replace(/\s/g, '')
     if (!/^\d{12}$/.test(d)) { setErr('Enter the student’s 12-digit APAAR ID.'); return }
     setErr('')
-    request({ apaar: d, verifier: VERIFIER.name, verifierOrg: VERIFIER.org, purpose, validityDays: days })
-    setApaar('')
-    setSent(true)
+    try {
+      await request({ apaar: d, purpose, validityDays: days })
+      setApaar('')
+      setSent(true)
+    } catch (e) {
+      setErr((e as Error).message)
+    }
   }
 
   return (

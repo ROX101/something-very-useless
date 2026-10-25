@@ -1,8 +1,8 @@
 import { create } from 'zustand'
-import { useMemo } from 'react'
-import { useInst, useValidation } from '../inst/store'
-import { INSTITUTION } from '../inst/data/reference'
-import { BASE, SAMPLE_ALERTS, type AicteAlert } from './data'
+import { api } from '../api'
+import { onSignOut } from '../store'
+import type { Submission } from '../inst/store'
+import { BASE, type AicteAlert } from './data'
 
 export type CaseStatus = 'Open' | 'Referred to Regional Office' | 'Reviewed, no action'
 
@@ -13,81 +13,69 @@ export interface CaseAction {
   note: string
 }
 
-const KEY = 'as.aicte.cases'
-
-function load(): Record<string, CaseAction> {
-  try {
-    const v = localStorage.getItem(KEY)
-    return v ? (JSON.parse(v) as Record<string, CaseAction>) : {}
-  } catch {
-    return {}
-  }
+export interface LiveSubmission {
+  submission: Submission
+  alerts: AicteAlert[]
+  excess: number
 }
 
-interface CaseState {
+export type Kpis = typeof BASE & { submitted: number }
+
+interface AicteState {
+  alerts: AicteAlert[]
   actions: Record<string, CaseAction>
-  act: (id: string, a: CaseAction) => void
+  live: LiveSubmission | null
+  kpis: Kpis | null
+  loaded: boolean
+  error: string | null
+  hydrate: () => Promise<void>
+  act: (id: string, a: CaseAction) => Promise<void>
 }
 
-export const useCases = create<CaseState>((set, get) => ({
-  actions: load(),
-  act: (id, a) => {
-    const actions = { ...get().actions, [id]: a }
-    set({ actions })
+const empty = { alerts: [], actions: {}, live: null, kpis: null, loaded: false, error: null }
+
+export const useAicte = create<AicteState>((set, get) => ({
+  ...empty,
+  hydrate: async () => {
     try {
-      localStorage.setItem(KEY, JSON.stringify(actions))
-    } catch {
-      return
+      const [alerts, actions, live, kpis] = await Promise.all([
+        api.get<AicteAlert[]>('/aicte/alerts'),
+        api.get<Record<string, CaseAction>>('/aicte/cases'),
+        api.get<LiveSubmission | null>('/aicte/live'),
+        api.get<Kpis>('/aicte/kpis'),
+      ])
+      set({ alerts, actions, live, kpis, loaded: true, error: null })
+    } catch (e) {
+      set({ loaded: true, error: (e as Error).message })
+    }
+  },
+  act: async (id, a) => {
+    const before = get().actions
+    set({ actions: { ...before, [id]: a } })
+    try {
+      const saved = await api.post<CaseAction>(`/aicte/alerts/${encodeURIComponent(id)}/actions`, { status: a.status, note: a.note })
+      set({ actions: { ...get().actions, [id]: saved } })
+    } catch (e) {
+      set({ actions: before, error: `Action was not saved: ${(e as Error).message}` })
     }
   },
 }))
 
+onSignOut(() => useAicte.setState(empty))
+
+/** Kept for the pages that read case actions: `useCases((s) => s.actions)` and `const { actions, act } = useCases()`. */
+export const useCases = useAicte
+
 export function useLiveSubmission() {
-  const submissions = useInst((s) => s.submissions)
-  const result = useValidation()
-  const latest = submissions[0]
-  return useMemo(() => {
-    if (!latest || !result) return null
-    const byRow = new Map(result.rows.map((r) => [r.row.rowNo, r.row]))
-    const alerts: AicteAlert[] = result.alerts.map((a) => ({
-      id: `L-${latest.receiptNo}-${a.id}`,
-      institution: INSTITUTION.name,
-      pid: INSTITUTION.pid,
-      city: INSTITUTION.city,
-      state: 'MH',
-      rule: a.rule,
-      title: a.title,
-      detail: a.detail,
-      clause: a.clause,
-      detected: latest.submittedAt,
-      live: true,
-      receiptNo: latest.receiptNo,
-      hash: latest.hash,
-      rows: a.rowNos.map((n) => {
-        const r = byRow.get(n)!
-        return { rowNo: n, name: r.NAME, studentId: r.INST_STUDENT_ID, programme: r.PROGRAMME, apaar: r.APAAR_ID }
-      }),
-    }))
-    return { submission: latest, alerts, excess: result.ledger.reduce((n, l) => n + l.excess, 0) }
-  }, [latest, result])
+  return useAicte((s) => s.live)
 }
 
 export function useAllAlerts() {
-  const live = useLiveSubmission()
-  return useMemo(() => [...(live?.alerts ?? []), ...SAMPLE_ALERTS], [live])
+  return useAicte((s) => s.alerts)
 }
 
-export function useKpis() {
-  const live = useLiveSubmission()
-  return {
-    institutions: BASE.institutions,
-    submitted: BASE.submitted + (live ? 1 : 0),
-    records: BASE.records + (live ? live.submission.records : 0),
-    apaarLinkedPct: BASE.apaarLinkedPct,
-    exceptionPct: BASE.exceptionPct,
-    openAlerts: BASE.openAlerts + (live ? live.alerts.length : 0),
-    crossDuplicates: BASE.crossDuplicates,
-  }
+export function useKpis(): Kpis {
+  return useAicte((s) => s.kpis) ?? { ...BASE }
 }
 
 export function statusOf(actions: Record<string, CaseAction>, id: string): CaseStatus {

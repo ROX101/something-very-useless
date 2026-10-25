@@ -4,7 +4,7 @@ import jsQR from 'jsqr'
 import { VERIFIER, VerifierLayout } from '../VerifierLayout'
 import { PageTitle, Panel, btn, formatDate, maskApaar } from '../../inst/ui/bits'
 import { verifyCredential, type VerifyResult } from '../../verify/crypto'
-import { PRIVATE_FIELDS, activeConsent, useConsent } from '../../verify/consent'
+import { PRIVATE_FIELDS, activeConsent, useConsent, type SharedRecord } from '../../verify/consent'
 import { fingerprint, inspect, mergeRegions, type StegoReport } from '../../verify/stego'
 
 interface Mark { report: StegoReport; url: string; width: number; height: number; code: string | null }
@@ -306,18 +306,30 @@ function MarkPanel({ mark }: { mark: Mark }) {
 }
 
 function Result({ r, onReset }: { r: VerifyResult; onReset: () => void }) {
-  const { requests, request, record } = useConsent()
+  const { requests, request, view } = useConsent()
   const apaar = r.ok ? r.credential.vc.credentialSubject.apaar : ''
   const consent = r.ok ? activeConsent(requests, apaar, VERIFIER.org) : undefined
   const waiting = r.ok && !consent && requests.some((x) => x.apaar === apaar && x.verifierOrg === VERIFIER.org && x.status === 'Pending')
-  const logged = useRef(false)
+  const [shared, setShared] = useState<SharedRecord | null>(null)
+  const [askErr, setAskErr] = useState('')
+  const viewedFor = useRef<string | null>(null)
 
+  // The server checks consent again and writes the read to the student's access log.
   useEffect(() => {
-    if (r.ok && consent && !logged.current) {
-      logged.current = true
-      record(VERIFIER.org, `Viewed your degree status (${consent.consentNo})`)
+    if (!r.ok || !consent) { setShared(null); viewedFor.current = null; return }
+    if (viewedFor.current === consent.consentNo) return
+    viewedFor.current = consent.consentNo ?? null
+    view(apaar).then(setShared)
+  }, [r, consent, apaar, view])
+
+  async function ask() {
+    setAskErr('')
+    try {
+      await request({ apaar, purpose: 'Employment verification', validityDays: 7 })
+    } catch (e) {
+      setAskErr((e as Error).message)
     }
-  }, [r, consent, record])
+  }
 
   const head = !r.ok
     ? { tone: 'border-l-err bg-err-bg', title: 'Signature invalid', text: r.reason, cls: 'animate-[shake_.35s_ease-in-out]' }
@@ -337,7 +349,7 @@ function Result({ r, onReset }: { r: VerifyResult; onReset: () => void }) {
           <div><dt className="text-sm text-muted">Name</dt><dd className="font-semibold">{r.credential.vc.credentialSubject.name}</dd></div>
           <div><dt className="text-sm text-muted">Degree</dt><dd>{r.credential.vc.credentialSubject.degree}</dd></div>
           <div><dt className="text-sm text-muted">Year of award</dt><dd>{r.credential.vc.credentialSubject.year}</dd></div>
-          <div><dt className="text-sm text-muted">Award status</dt><dd>Awarded</dd></div>
+          <div><dt className="text-sm text-muted">Award status</dt><dd className={shared?.status === 'Revoked' ? 'font-semibold text-err' : ''}>{shared?.status ?? 'Checking…'}</dd></div>
           <div><dt className="text-sm text-muted">APAAR ID</dt><dd className="font-mono">{maskApaar(apaar)}</dd></div>
           <div><dt className="text-sm text-muted">Student consent</dt><dd>{consent.consentNo}, until {formatDate(consent.expiresAt!)}</dd></div>
           <p className="text-sm text-muted sm:col-span-2">Not shared by the student: {PRIVATE_FIELDS.join(', ').toLowerCase()}.</p>
@@ -348,7 +360,8 @@ function Result({ r, onReset }: { r: VerifyResult; onReset: () => void }) {
         <div className="border-b border-line px-5 py-4">
           {waiting
             ? <p className="text-ink">Request sent. Waiting for the student to allow or refuse.</p>
-            : <button className={btn.primary} onClick={() => request({ apaar, verifier: VERIFIER.name, verifierOrg: VERIFIER.org, purpose: 'Employment verification', validityDays: 7 })}>Ask the student for consent</button>}
+            : <button className={btn.primary} onClick={ask}>Ask the student for consent</button>}
+          {askErr && <p role="alert" className="mt-2 text-sm text-err">{askErr}</p>}
         </div>
       )}
 

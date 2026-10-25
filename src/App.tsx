@@ -5,7 +5,8 @@ import Login from './pages/Login'
 import PortalHome from './pages/PortalHome'
 import InfoPage, { INFO } from './pages/InfoPage'
 import { useApp } from './store'
-import { ROLE_HOME, type Role } from './auth/directory'
+import { ROLE_HOME, type Account, type Role } from './auth/directory'
+import { ApiError, api, setUnauthorizedHandler } from './api'
 import InstDashboard from './inst/pages/Dashboard'
 import InstUpload from './inst/pages/Upload'
 import InstLedger from './inst/pages/Ledger'
@@ -38,6 +39,17 @@ function LoginOrHome() {
 
 export default function App() {
   const { textSize, lang } = useApp()
+
+  // Any 401 from the API signs out locally; on start, confirm the cached account still has a live session.
+  useEffect(() => {
+    setUnauthorizedHandler(() => useApp.getState().clearSession())
+    if (useApp.getState().account) {
+      api.get<{ account: Account }>('/auth/me')
+        .then(({ account }) => useApp.getState().signIn(account))
+        .catch((e) => { if (e instanceof ApiError && e.status === 401) useApp.getState().clearSession() })
+    }
+  }, [])
+
   useEffect(() => {
     document.documentElement.style.fontSize = textSize === 'sm' ? '14px' : textSize === 'lg' ? '18px' : '16px'
     document.documentElement.lang = lang

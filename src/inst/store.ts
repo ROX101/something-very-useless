@@ -3,6 +3,8 @@ import { useMemo } from 'react'
 import type { UploadRow } from './engine/types'
 import { runRules } from './engine/rules'
 import { RULE_CONTEXT } from './data/dataset'
+import { api } from '../api'
+import { onSignOut } from '../store'
 
 export interface Submission {
   receiptNo: string
@@ -12,54 +14,95 @@ export interface Submission {
   alerts: number
   hash: string
   fileName: string
+  status?: string
 }
 
-interface Persisted {
+interface ServerState {
+  upload: { id: number; fileName: string; rows: UploadRow[]; uploadedAt: string; fixesApplied: number } | null
+  submissions: Submission[]
+}
+
+interface Data {
   fileName: string | null
   rows: UploadRow[] | null
   uploadedAt: string | null
   fixesApplied: number
   submissions: Submission[]
+  loaded: boolean
+  /** Last failed save, shown by InstLayout so nothing fails silently. */
+  error: string | null
 }
 
-interface InstState extends Persisted {
+interface InstState extends Data {
+  hydrate: () => Promise<void>
   setUpload: (fileName: string, rows: UploadRow[]) => void
   setRows: (rows: UploadRow[], fixes: number) => void
   clearUpload: () => void
-  addSubmission: (s: Submission) => void
+  submit: () => Promise<Submission>
+  dismissError: () => void
 }
 
-const KEY = 'as.inst.1-9000417'
-const empty: Persisted = { fileName: null, rows: null, uploadedAt: null, fixesApplied: 0, submissions: [] }
+const empty: Data = { fileName: null, rows: null, uploadedAt: null, fixesApplied: 0, submissions: [], loaded: false, error: null }
 
-function load(): Persisted {
-  try {
-    const v = localStorage.getItem(KEY)
-    return v ? { ...empty, ...(JSON.parse(v) as Persisted) } : empty
-  } catch {
-    return empty
-  }
+// Writes are queued so a fix applied right after an upload never reaches the server before the upload itself.
+let queue: Promise<unknown> = Promise.resolve()
+function enqueue<T>(job: () => Promise<T>): Promise<T> {
+  const p = queue.then(job, job)
+  queue = p.catch(() => undefined)
+  return p
 }
-function save(p: Persisted) {
-  try {
-    localStorage.setItem(KEY, JSON.stringify(p))
-  } catch {
-    return
-  }
-}
-
-const pick = (s: InstState): Persisted => ({
-  fileName: s.fileName, rows: s.rows, uploadedAt: s.uploadedAt, fixesApplied: s.fixesApplied, submissions: s.submissions,
-})
 
 export const useInst = create<InstState>((set, get) => ({
-  ...load(),
-  setUpload: (fileName, rows) => { set({ fileName, rows, uploadedAt: new Date().toISOString(), fixesApplied: 0 }); save(pick(get())) },
-  setRows: (rows, fixes) => { set({ rows, fixesApplied: get().fixesApplied + fixes }); save(pick(get())) },
-  clearUpload: () => { set({ fileName: null, rows: null, uploadedAt: null, fixesApplied: 0 }); save(pick(get())) },
-  addSubmission: (s) => { set({ submissions: [s, ...get().submissions] }); save(pick(get())) },
+  ...empty,
+
+  hydrate: async () => {
+    try {
+      await queue
+      const s = await api.get<ServerState>('/inst/state')
+      set({
+        fileName: s.upload?.fileName ?? null,
+        rows: s.upload?.rows ?? null,
+        uploadedAt: s.upload?.uploadedAt ?? null,
+        fixesApplied: s.upload?.fixesApplied ?? 0,
+        submissions: s.submissions,
+        loaded: true,
+      })
+    } catch (e) {
+      set({ loaded: true, error: (e as Error).message })
+    }
+  },
+
+  setUpload: (fileName, rows) => {
+    set({ fileName, rows, uploadedAt: new Date().toISOString(), fixesApplied: 0, error: null })
+    enqueue(() => api.post<{ upload: { uploadedAt: string } }>('/inst/uploads', { fileName, rows }))
+      .then((r) => set({ uploadedAt: r.upload.uploadedAt }))
+      .catch((e: Error) => set({ error: `Upload was not saved: ${e.message}` }))
+  },
+
+  setRows: (rows, fixes) => {
+    set({ rows, fixesApplied: get().fixesApplied + fixes, error: null })
+    enqueue(() => api.put<{ fixesApplied: number }>('/inst/uploads/current/rows', { rows, fixes }))
+      .then((r) => set({ fixesApplied: r.fixesApplied }))
+      .catch((e: Error) => set({ error: `Fix was not saved: ${e.message}` }))
+  },
+
+  clearUpload: () => {
+    set({ fileName: null, rows: null, uploadedAt: null, fixesApplied: 0, error: null })
+    enqueue(() => api.del('/inst/uploads/current')).catch((e: Error) => set({ error: e.message }))
+  },
+
+  submit: async () => {
+    const s = await enqueue(() => api.post<Submission>('/inst/submissions', { declaration: true }))
+    set({ submissions: [s, ...get().submissions] })
+    return s
+  },
+
+  dismissError: () => set({ error: null }),
 }))
 
+onSignOut(() => useInst.setState(empty))
+
+/** Instant in-browser preview. The server re-runs the same rules on submit and its result is authoritative. */
 export function useValidation() {
   const rows = useInst((s) => s.rows)
   return useMemo(() => (rows ? runRules(rows, RULE_CONTEXT) : null), [rows])

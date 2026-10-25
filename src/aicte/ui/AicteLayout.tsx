@@ -1,8 +1,13 @@
 import type { ReactNode } from 'react'
 import { PortalShell } from '../../ui/PortalShell'
+import { useSync } from '../../useSync'
+import { useAicte } from '../store'
 import { AY } from '../data'
 
 export function AicteLayout({ children }: { children: ReactNode }) {
+  const { loaded, error, hydrate } = useAicte()
+  useSync(hydrate, 15000)
+
   return (
     <PortalShell
       context={`All India, academic year ${AY}`}
@@ -12,7 +17,10 @@ export function AicteLayout({ children }: { children: ReactNode }) {
         { to: '/aicte/rings', label: 'Duplicate rings' },
         { to: '/aicte/reports', label: 'Reports' },
       ]}>
-      {children}
+      {error && (
+        <div role="alert" className="mb-5 rounded border-l-4 border-err bg-err-bg px-4 py-3 text-sm text-err">{error}</div>
+      )}
+      {loaded ? children : <p className="py-16 text-center text-muted">Loading national data…</p>}
     </PortalShell>
   )
 }
