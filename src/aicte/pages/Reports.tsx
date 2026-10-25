@@ -1,5 +1,6 @@
 import { useMemo, useState } from 'react'
 import * as XLSX from 'xlsx'
+import { audit } from '../../audit/log'
 import { AicteLayout } from '../ui/AicteLayout'
 import { Clause, PageTitle, Panel, btn, formatDate, td, th } from '../../inst/ui/bits'
 import { STATES, type StateRow } from '../states'
@@ -17,7 +18,7 @@ const KINDS: { id: Kind; label: string }[] = [
 
 const PROFILES = ['Standard', 'NIRF (Sanctioned intake, total actual student strength)', 'AISHE (DCF 2024-25 format)', 'NBA SAR (enrolment ratio)']
 
-const select = 'h-10 w-full rounded border border-line bg-white px-3 text-[15px] text-ink focus:outline-none focus:ring-2 focus:ring-navy/30'
+const select = 'h-10 w-full rounded border border-line bg-white px-3 text-[0.9375rem] text-ink focus:outline-none focus:ring-2 focus:ring-navy/30'
 
 interface Report {
   kind: Kind
@@ -74,6 +75,7 @@ export default function Reports() {
     const hash = await sha256(JSON.stringify(r.rows))
     await new Promise((res) => setTimeout(res, 500))
     setReport({ ...r, hash, generatedAt: new Date().toISOString() })
+    audit('Reports', 'Generated report', `${r.title}, SHA-256 ${hash.slice(0, 16)}`)
     setBusy(false)
   }
 
@@ -82,6 +84,7 @@ export default function Reports() {
     const wb = XLSX.utils.book_new()
     const ws = XLSX.utils.aoa_to_sheet([[report.title], [`Profile: ${report.profile}`], [`Generated ${formatDate(report.generatedAt)}, SHA-256 ${report.hash}`], [], report.header, ...report.rows])
     XLSX.utils.book_append_sheet(wb, ws, 'Report')
+    audit('Reports', 'Exported report (Excel)', report.title)
     XLSX.writeFile(wb, `${report.title.replace(/[^A-Za-z0-9]+/g, '_')}.xlsx`)
   }
 
@@ -123,7 +126,7 @@ export default function Reports() {
       {report && (
         <Panel className="mt-6" title={report.title}
           actions={<div className="no-print flex flex-wrap gap-2">
-            <button className={btn.secondary} onClick={() => window.print()}>Export PDF</button>
+            <button className={btn.secondary} onClick={() => { audit('Reports', 'Exported report (PDF)', report.title); window.print() }}>Export PDF</button>
             <button className={btn.secondary} onClick={exportExcel}>Export Excel</button>
             <button className={btn.secondary} onClick={() => setApi((v) => !v)}>API</button>
           </div>}>
@@ -132,7 +135,7 @@ export default function Reports() {
           {report.kind === 'excess' && <p className="mt-2 text-sm"><Clause clause="7.4(g)" /></p>}
 
           {api && (
-            <pre className="no-print mt-4 overflow-x-auto rounded bg-ink p-4 text-[13px] text-white">{`GET /v1/reports/${report.kind}?ay=${AY}${state ? `&state=${state}` : ''}&profile=${encodeURIComponent(report.profile.split(' ')[0].toLowerCase())}
+            <pre className="no-print mt-4 overflow-x-auto rounded bg-ink p-4 text-[0.8125rem] text-white">{`GET /v1/reports/${report.kind}?ay=${AY}${state ? `&state=${state}` : ''}&profile=${encodeURIComponent(report.profile.split(' ')[0].toLowerCase())}
 Authorization: Bearer <AICTE service token>
 
 → 200 OK  application/json  (${report.rows.length} rows, sha256 ${report.hash.slice(0, 12)}…)`}</pre>
@@ -141,7 +144,7 @@ Authorization: Bearer <AICTE service token>
           {report.chart && <BarChart data={report.chart} />}
 
           <div className="mt-6 overflow-x-auto rounded border border-line">
-            <table className="w-full text-[15px]">
+            <table className="w-full text-[0.9375rem]">
               <thead className="border-b border-line bg-page/60"><tr>{report.header.map((h, i) => <th key={h} className={`${th} ${i > 0 && typeof report.rows[0]?.[i] === 'number' ? 'text-right' : ''}`}>{h}</th>)}</tr></thead>
               <tbody className="divide-y divide-line">
                 {report.rows.map((r, i) => (
@@ -167,7 +170,7 @@ function BarChart({ data }: { data: { label: string; value: number; max: number;
             onMouseEnter={() => setHover(i)} onMouseLeave={() => setHover(null)}>
             <span className="truncate text-ink" title={d.label}>{d.label}</span>
             <span className="relative h-5 rounded-r bg-page">
-              <span className={`absolute inset-y-0 left-0 origin-left animate-[growX_.6s_ease-out_both] rounded-r ${hover === null || hover === i ? 'bg-navy' : 'bg-[#8798C8]'}`}
+              <span className={`absolute inset-y-0 left-0 origin-left animate-[growX_.6s_ease-out_both] rounded-r ${hover === null || hover === i ? 'bg-navy' : 'bg-[#9A9A9A]'}`}
                 style={{ width: `${(d.value / d.max) * 100}%`, animationDelay: `${i * 40}ms` }} />
             </span>
             <span className="text-right font-semibold tnum">{d.value}{d.unit}</span>

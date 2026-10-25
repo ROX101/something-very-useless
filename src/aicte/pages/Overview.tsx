@@ -46,7 +46,7 @@ export default function Overview() {
             <TileMap states={states} value={(s) => s.excessAlerts} label="Excess-admission alerts" />
           </Panel>
           <Panel title="States with the most excess-admission alerts" className="min-w-0" flush>
-            <div className="overflow-x-auto"><table className="w-full text-[15px]">
+            <div className="overflow-x-auto"><table className="w-full text-[0.9375rem]">
               <thead className="border-b border-line bg-page/60">
                 <tr>
                   <th className={th}>State</th>
@@ -71,7 +71,7 @@ export default function Overview() {
 
         <Panel title="Latest compliance alerts" actions={<Link to="/aicte/alerts" className={btn.link}>All compliance alerts</Link>} flush>
           <div className="overflow-x-auto">
-            <table className="w-full text-[15px]">
+            <table className="w-full text-[0.9375rem]">
               <thead className="border-b border-line bg-page/60">
                 <tr>
                   <th className={th}>Detected</th>
@@ -101,7 +101,7 @@ export default function Overview() {
         </Panel>
 
         <Panel title="Risk watch-list" actions={<Link to="/aicte/rings" className={btn.link}>Open duplicate rings</Link>} flush>
-          <div className="overflow-x-auto"><table className="w-full text-[15px]">
+          <div className="overflow-x-auto"><table className="w-full text-[0.9375rem]">
             <thead className="border-b border-line bg-page/60">
               <tr>
                 <th className={th}>Institution</th>
@@ -134,7 +134,7 @@ function Kpi({ label, value, text, note, tone = 'text-ink' }: { label: string; v
   return (
     <div className="border-b border-r border-line px-5 py-4 [&:nth-child(2n)]:border-r-0 lg:[&:nth-child(2n)]:border-r lg:[&:nth-child(4n)]:border-r-0 lg:[&:nth-child(n+5)]:border-b-0 [&:nth-child(n+7)]:border-b-0">
       <p className="text-sm text-muted">{label}</p>
-      <p className={`mt-1 text-[26px] font-semibold leading-tight tnum ${tone}`}>
+      <p className={`mt-1 text-[1.625rem] font-semibold leading-tight tnum ${tone}`}>
         {text ?? <CountUp value={value ?? 0} />}
       </p>
       {note && <p className="text-sm text-muted">{note}</p>}

@@ -1,7 +1,7 @@
 import { useState } from 'react'
 import type { StateRow } from '../states'
 
-export const SEQ = ['#E9EDF6', '#BCC7E3', '#8798C8', '#4E64A6', '#14235A']
+export const SEQ = ['#EDEDED', '#C4C4C4', '#9A9A9A', '#5E5E5E', '#111111']
 
 export function binOf(v: number, max: number) {
   if (v === 0) return 0
@@ -16,7 +16,7 @@ export function TileMap({ states, value, label }: { states: StateRow[]; value: (
   const rows = 9
   return (
     <div className="relative">
-      <svg viewBox={`0 0 ${cols * W} ${rows * W}`} className="w-full" role="img" aria-label={`${label} by state`}>
+      <svg viewBox={`0 0 ${cols * W} ${rows * W}`} className="mx-auto block w-full max-w-[560px]" role="img" aria-label={`${label} by state`}>
         {states.map((s) => {
           const v = value(s)
           const b = binOf(v, max)
@@ -26,8 +26,8 @@ export function TileMap({ states, value, label }: { states: StateRow[]; value: (
               onMouseEnter={() => setHover(s)} onMouseLeave={() => setHover(null)} className="cursor-default">
               <rect width={W - 4} height={W - 4} rx="4" fill={SEQ[b]}
                 stroke={hover?.code === s.code ? '#E07B1A' : '#FFFFFF'} strokeWidth={hover?.code === s.code ? 2.5 : 2} />
-              <text x={(W - 4) / 2} y={20} textAnchor="middle" fontSize="12" fontWeight="600" fill={dark ? '#FFFFFF' : '#1A2233'}>{s.code}</text>
-              <text x={(W - 4) / 2} y={36} textAnchor="middle" fontSize="11" fill={dark ? '#E9EDF6' : '#5B6577'}>{v}</text>
+              <text x={(W - 4) / 2} y={20} textAnchor="middle" fontSize="12" fontWeight="600" fill={dark ? '#FFFFFF' : '#111111'}>{s.code}</text>
+              <text x={(W - 4) / 2} y={36} textAnchor="middle" fontSize="11" fill={dark ? '#EDEDED' : '#5C5C5C'}>{v}</text>
             </g>
           )
         })}

@@ -50,7 +50,7 @@ export default function Rings() {
         <Panel title="Institution risk score" className="min-w-0">
           <p className="font-semibold text-ink">{RISK.institution}</p>
           <p className="text-sm text-muted">{RISK.city}, PID {RISK.pid}</p>
-          <p className="mt-4 font-serif text-[52px] font-medium leading-none text-err tnum">{RISK.score}<span className="text-2xl text-muted">/100</span></p>
+          <p className="mt-4 font-serif text-[3.25rem] font-medium leading-none text-err tnum">{RISK.score}<span className="text-2xl text-muted">/100</span></p>
           <ul className="mt-5 space-y-4">
             {RISK.factors.map((f, i) => (
               <li key={f.label} className="animate-[fadeIn_.4s_ease-out_both]" style={{ animationDelay: `${600 + i * 150}ms` }}>
@@ -76,7 +76,7 @@ export default function Rings() {
       {showRows && (
         <Panel title={`${total} cross-enrolled students at ${RISK.institution}`} className="mt-6" flush>
           <div className="max-h-96 overflow-y-auto">
-            <table className="w-full text-[15px]">
+            <table className="w-full text-[0.9375rem]">
               <thead className="sticky top-0 border-b border-line bg-page"><tr><th className={th}>#</th><th className={th}>Student</th><th className={th}>APAAR</th><th className={th}>Also enrolled at</th></tr></thead>
               <tbody className="divide-y divide-line">
                 {rows.map((r, i) => (
@@ -94,7 +94,7 @@ export default function Rings() {
       )}
 
       <Panel title="Risk watch-list" className="mt-6" flush>
-        <div className="overflow-x-auto"><table className="w-full text-[15px]">
+        <div className="overflow-x-auto"><table className="w-full text-[0.9375rem]">
           <thead className="border-b border-line bg-page/60"><tr><th className={th}>Institution</th><th className={th}>Main signal</th><th className={`${th} w-64`}>Risk score</th></tr></thead>
           <tbody className="divide-y divide-line">
             {WATCHLIST.map((w) => (
@@ -164,10 +164,10 @@ function RingGraph() {
       })}
       {RING.nodes.map((n) => (
         <g key={n.id} onMouseEnter={() => setHover(n.id)} onMouseLeave={() => setHover(null)} className="cursor-default">
-          <circle cx={n.x} cy={n.y} r={n.r} fill={n.id === 'M' ? '#14235A' : '#FFFFFF'} stroke="#14235A" strokeWidth="2.5" />
-          <text x={n.x} y={n.y + 5} textAnchor="middle" fontSize={n.r > 30 ? 15 : 12} fontWeight="600" fill={n.id === 'M' ? '#FFFFFF' : '#14235A'}>{n.id === 'M' ? '87' : n.state}</text>
-          <text x={n.x} y={n.y + n.r + 20} textAnchor="middle" fontSize="14" fontWeight="600" fill="#1A2233">{n.short}</text>
-          <text x={n.x} y={n.y + n.r + 37} textAnchor="middle" fontSize="12.5" fill="#5B6577">{n.place}</text>
+          <circle cx={n.x} cy={n.y} r={n.r} fill={n.id === 'M' ? '#111111' : '#FFFFFF'} stroke="#111111" strokeWidth="2.5" />
+          <text x={n.x} y={n.y + 5} textAnchor="middle" fontSize={n.r > 30 ? 15 : 12} fontWeight="600" fill={n.id === 'M' ? '#FFFFFF' : '#111111'}>{n.id === 'M' ? '87' : n.state}</text>
+          <text x={n.x} y={n.y + n.r + 20} textAnchor="middle" fontSize="14" fontWeight="600" fill="#111111">{n.short}</text>
+          <text x={n.x} y={n.y + n.r + 37} textAnchor="middle" fontSize="12.5" fill="#5C5C5C">{n.place}</text>
         </g>
       ))}
     </svg>

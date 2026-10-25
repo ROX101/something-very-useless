@@ -25,12 +25,12 @@ export const INFO: Record<string, InfoContent> = {
   },
   help: {
     title: 'Help & support',
-    paragraphs: ['For assistance with your account, submissions or verification requests, contact the APAAR-Sathi helpdesk. Please keep your user ID ready when you get in touch.'],
+    paragraphs: ['For assistance with your account, submissions or verification requests, contact the APAAR helpdesk. Please keep your user ID ready when you get in touch.'],
   },
   about: {
-    title: 'About APAAR-Sathi',
+    title: 'About APAAR',
     paragraphs: [
-      'APAAR-Sathi is a student data management and verification platform for AICTE-approved institutions, built on the APAAR ID as the unique academic identifier.',
+      'APAAR is a student data management and verification platform for AICTE-approved institutions, built on the APAAR ID as the unique academic identifier.',
       'It brings together institution submissions, automated validation, national monitoring and consent-based verification of academic records in one platform.',
     ],
   },
@@ -52,7 +52,7 @@ export default function InfoPage({ id }: { id: keyof typeof INFO }) {
   const c = INFO[id]
   return (
     <PublicLayout crumb={c.title}>
-      <article className="max-w-3xl border border-line bg-white p-8 md:p-10">
+      <article className="max-w-4xl border border-line bg-white p-8 md:p-10">
         <h1 className="font-serif text-3xl text-ink">{c.title}</h1>
         {c.paragraphs.map((p) => <p key={p} className="mt-4 leading-relaxed text-ink">{p}</p>)}
         <Link to="/" className="mt-8 inline-block text-sm font-semibold text-navy underline underline-offset-2">Back to sign in</Link>

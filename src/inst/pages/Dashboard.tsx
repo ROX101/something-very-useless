@@ -36,8 +36,8 @@ export default function Dashboard() {
       <section className="mb-6 flex flex-col gap-6 rounded border border-line bg-white p-6 sm:flex-row sm:items-center">
         <Crest size={104} />
         <div className="min-w-0 flex-1">
-          <h1 className="font-serif text-[30px] font-medium leading-tight text-ink">{INSTITUTION.name}</h1>
-          <p className="mt-1 text-[15px] text-muted">{INSTITUTION.city}, {INSTITUTION.state}. Welcome, {account.name}</p>
+          <h1 className="font-serif text-[1.875rem] font-medium leading-tight text-ink">{INSTITUTION.name}</h1>
+          <p className="mt-1 text-[0.9375rem] text-muted">{INSTITUTION.city}, {INSTITUTION.state}. Welcome, {account.name}</p>
           <dl className="mt-4 grid gap-x-8 gap-y-3 text-sm sm:grid-cols-2 lg:grid-cols-4">
             <Fact label="AICTE permanent ID">{INSTITUTION.pid}</Fact>
             <Fact label="Established">{INSTITUTION.established}</Fact>
@@ -69,7 +69,7 @@ export default function Dashboard() {
 
         <Panel title="Programmes, approved intake" flush>
           <div className="overflow-x-auto">
-            <table className="w-full text-[15px]">
+            <table className="w-full text-[0.9375rem]">
               <thead className="border-b border-line bg-page/60">
                 <tr>
                   <th className={th}>Programme</th>

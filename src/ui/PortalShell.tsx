@@ -2,6 +2,7 @@ import type { ReactNode } from 'react'
 import { Link, NavLink, useNavigate } from 'react-router-dom'
 import { useApp } from '../store'
 import { ROLE_LABEL } from '../auth/directory'
+import { audit } from '../audit/log'
 
 export interface PortalNavItem { to: string; label: string; end?: boolean; done?: boolean }
 
@@ -16,9 +17,9 @@ export function PortalShell({ children, nav = [], context, logo, showOrg = true 
         Skip to main content
       </a>
       <header className="border-b border-line bg-white">
-        <div className="mx-auto flex max-w-6xl flex-wrap items-center justify-between gap-4 px-4 py-4 sm:px-6">
+        <div className="mx-auto flex max-w-none lg:px-10 flex-wrap items-center justify-between gap-4 px-4 py-4 sm:px-6">
           <div className="flex min-w-0 items-center gap-5">
-            <Link to="/" className="text-2xl font-bold tracking-tight text-navy">APAAR-Sathi</Link>
+            <Link to="/" className="text-2xl font-bold tracking-tight text-navy">APAAR</Link>
             {showOrg && (
               <>
                 <span className="hidden h-10 w-px bg-line sm:block" aria-hidden />
@@ -35,7 +36,7 @@ export function PortalShell({ children, nav = [], context, logo, showOrg = true 
               <p className="text-sm font-semibold text-ink">{account.name}</p>
               <p className="text-xs text-muted">{ROLE_LABEL[account.role]}</p>
             </div>
-            <button type="button" onClick={() => { signOut(); navigate('/', { replace: true }) }}
+            <button type="button" onClick={() => { audit('Sign-in', 'Signed out', account.userId); signOut(); navigate('/', { replace: true }) }}
               className="rounded border border-navy px-3 py-1.5 text-sm font-semibold text-navy hover:bg-navy-light">
               Sign out
             </button>
@@ -43,7 +44,7 @@ export function PortalShell({ children, nav = [], context, logo, showOrg = true 
         </div>
       </header>
       <nav className="bg-navy" aria-label="Portal">
-        <div className="mx-auto flex max-w-6xl items-center justify-between gap-4 px-4 sm:px-6">
+        <div className="mx-auto flex max-w-none lg:px-10 items-center justify-between gap-4 px-4 sm:px-6">
           <div className="flex gap-7 overflow-x-auto">
             {nav.map((n) => (
               <NavLink key={n.to} to={n.to} end={n.end}
@@ -60,9 +61,9 @@ export function PortalShell({ children, nav = [], context, logo, showOrg = true 
           </button>
         </div>
       </nav>
-      <main id="main" className="mx-auto w-full max-w-6xl flex-1 px-4 py-8 sm:px-6">{children}</main>
+      <main id="main" className="mx-auto w-full max-w-none lg:px-10 flex-1 px-4 py-8 sm:px-6">{children}</main>
       <footer className="border-t border-line bg-white">
-        <div className="mx-auto max-w-6xl px-4 py-4 text-xs text-muted sm:px-6">© APAAR-Sathi</div>
+        <div className="mx-auto max-w-none lg:px-10 px-4 py-4 text-xs text-muted sm:px-6">© APAAR</div>
       </footer>
     </div>
   )

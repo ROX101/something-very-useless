@@ -5,7 +5,7 @@ import { STATE_NAME, type AicteAlert } from '../data'
 import { statusOf, useAllAlerts, useCases, type CaseStatus } from '../store'
 import { useApp } from '../../store'
 
-const select = 'h-10 rounded border border-line bg-white px-3 text-[15px] text-ink focus:outline-none focus:ring-2 focus:ring-navy/30'
+const select = 'h-10 rounded border border-line bg-white px-3 text-[0.9375rem] text-ink focus:outline-none focus:ring-2 focus:ring-navy/30'
 
 export default function Alerts() {
   const alerts = useAllAlerts()
@@ -56,7 +56,7 @@ export default function Alerts() {
           <span className="ml-auto pb-2 text-sm text-muted">{shown.length} of {alerts.length} alerts</span>
         </div>
         <div className="overflow-x-auto">
-          <table className="w-full text-[15px]">
+          <table className="w-full text-[0.9375rem]">
             <thead className="border-b border-line bg-page/60">
               <tr>
                 <th className={th}>Detected</th>
@@ -184,7 +184,7 @@ export function CaseDrawer({ a, onClose }: { a: AicteAlert; onClose: () => void 
               <>
                 <label className="mt-2 block text-sm text-muted" htmlFor="note">Note for the case file</label>
                 <textarea id="note" value={note} onChange={(e) => setNote(e.target.value)} rows={3}
-                  className="mt-1 w-full rounded border border-line px-3 py-2 text-[15px] focus:outline-none focus:ring-2 focus:ring-navy/30"
+                  className="mt-1 w-full rounded border border-line px-3 py-2 text-[0.9375rem] focus:outline-none focus:ring-2 focus:ring-navy/30"
                   placeholder="Reason for referral or closure" />
                 <div className="mt-3 flex flex-wrap gap-3">
                   <button className={btn.primary} onClick={() => decide('Referred to Regional Office')}>Refer to Regional Office</button>
