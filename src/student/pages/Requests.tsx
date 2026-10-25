@@ -29,7 +29,7 @@ export default function Requests() {
                 <p className="text-lg font-semibold text-ink">Consent given to {r.verifierOrg}</p>
                 <p className="text-muted">They can see only the fields you allowed, until the date below.</p>
               </div>
-              <dl className="grid gap-x-8 gap-y-3 px-5 py-4 text-[15px] sm:grid-cols-3">
+              <dl className="grid gap-x-8 gap-y-3 px-5 py-4 text-[0.9375rem] sm:grid-cols-3">
                 <div><dt className="text-sm text-muted">Consent number</dt><dd className="font-mono">{r.consentNo}</dd></div>
                 <div><dt className="text-sm text-muted">Valid until</dt><dd>{formatDate(r.expiresAt!)}</dd></div>
                 <div><dt className="text-sm text-muted">Shared</dt><dd>{SHARED_FIELDS.join(', ')}</dd></div>
@@ -48,9 +48,11 @@ export default function Requests() {
               <h2 className="mt-1 text-xl font-semibold text-ink">{r.verifierOrg} wants to verify your degree</h2>
               <p className="text-muted">Requested by {r.verifier}, registered verifier</p>
             </div>
-            <dl className="grid gap-x-8 gap-y-3 px-5 py-4 text-[15px] sm:grid-cols-2">
+            <dl className="grid gap-x-8 gap-y-3 px-5 py-4 text-[0.9375rem] sm:grid-cols-2">
               <div><dt className="text-sm text-muted">Purpose</dt><dd className="font-medium">{r.purpose}</dd></div>
+              {r.reference && <div><dt className="text-sm text-muted">Reference</dt><dd className="font-medium">{r.reference}</dd></div>}
               <div><dt className="text-sm text-muted">Access for</dt><dd className="font-medium">{r.validityDays} days after you allow</dd></div>
+              <div><dt className="text-sm text-muted">Data kept by {r.verifierOrg.replace(' Pvt. Ltd.', '')}</dt><dd className="font-medium">{r.retentionDays ?? 30} days, then deleted</dd></div>
             </dl>
             <div className="grid gap-4 border-t border-line px-5 py-4 sm:grid-cols-2">
               <div>
@@ -83,7 +85,8 @@ export default function Requests() {
                 <li key={r.id} className="flex flex-wrap items-center justify-between gap-3 px-5 py-3">
                   <div>
                     <p className="font-medium">{r.verifierOrg}</p>
-                    <p className="text-sm text-muted">{r.purpose}, {formatDate(r.createdAt)}{r.consentNo && `, ${r.consentNo}`}</p>
+                    <p className="text-sm text-muted">{r.purpose}{r.reference && `, ${r.reference}`}</p>
+                    <p className="text-sm text-muted">{formatDate(r.createdAt)}{r.consentNo && `, ${r.consentNo}`}</p>
                   </div>
                   <div className="flex items-center gap-4">
                     <span className={`text-sm font-semibold ${r.status === 'Approved' ? 'text-ok' : 'text-muted'}`}>{r.status}</span>

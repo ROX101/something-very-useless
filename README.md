@@ -1,4 +1,4 @@
-# APAAR-Sathi (SIH 2026 · SIH26263)
+# APAAR (SIH 2026 · SIH26263)
 
 Student data management and verification platform for AICTE-approved institutions.
 
@@ -56,9 +56,11 @@ To wipe and reseed later, run `npm run db:reset` with `DATABASE_URL` set to the 
 | `GET/POST /api/verifier/requests` · `GET /records/:apaar` | Verifier (records need active consent; every read is logged) |
 | `GET /api/public/certificates/:certNo` · `GET /api/health` | Public |
 
-## Sign-in
-One login page. The account decides the role and the portal (no role picker).
+## Sign-in and registration
+One sign-in page (`/`). The account decides the role and the portal (no role picker).
 Password for every demo account: `Demo@2026` (also listed under "Demo accounts" on the sign-in page).
+Fields are checked when you leave them; wrong user ID, wrong password and non-AICTE addresses for AICTE roles each get their own message.
+"Register an account" opens `/register` in the same design: Student (APAAR ID and mobile number) or Organisation (name, work email, purpose of verification). The request is stored on the server (`registrations` table) and returns a reference number such as `REG-2026-10001`; institution and AICTE accounts are issued by AICTE, not self-registered.
 
 | User ID | Role | Lands on |
 |---|---|---|
@@ -86,6 +88,34 @@ Sign in as `nodal@aranya-tech.edu.in` (or `operator@…`, who cannot submit).
 | Submit to AICTE | /inst/submit |
 
 On a fresh database the sample file gives 509 rows → 482 clean / 17 need action / 10 auto-cleared; after the 12 suggested fixes → 507 records and 2 compliance alerts (R06, R07). R10 (cross-enrolment) fires only once another institution has submitted the same APAAR ID. The server and the browser preview must agree; `npm run test:api` checks this.
+
+Per rule before fixes: R01 2, R02 4, R03 3, R04 1, R08 1, R09 1, R06 3, R07 2 (need action; R10 1 more once another institution has submitted the same student); R03a 6, R04a 2, R05a 2 (auto-cleared).
+- Data errors (R01–R04, R08, R09) are fixed by the institution; "Apply 12 suggested fixes" applies them all, or fix one row at a time from its detail panel.
+- Compliance alerts (R05, R06, R07, R10) cannot be cleared by the institution and go to AICTE with the submission.
+- "Download issues (.xlsx)" exports every flagged row.
+- Seat ledger: approved intake vs admitted per programme, supernumerary buckets (FN/OCI/CIWG 15%, TFW 5% only when at least half the seats are filled, PM-USPY 2 per course), excess seats past the intake line.
+- Submit: only the nodal officer can submit, after the declaration; the receipt shows a receipt number and a SHA-256 fingerprint of the data.
+
+## AICTE portal
+Sign in as `meena.iyer@aicte-india.org`.
+
+| Page | Route | What it shows |
+|---|---|---|
+| National overview | /aicte | Institutions in scope, returns submitted, records received, APAAR-linked %, open alerts, cross-institution duplicates, state tile map, deadline. All computed from submitted data, starting at zero |
+| Compliance alerts | /aicte/alerts | Every alert with its rows; the college's live submission appears at the top. Review a case, then Refer to Regional Office or Close with no action (reason required) |
+| Duplicate rings | /aicte/rings | Students enrolled at two institutions at once (from submitted enrolments), the institution's risk score with the alerts behind it, the masked list of records, watch-list |
+| Reports | /aicte/reports | Report builder with preview; Export PDF (print to PDF), Export Excel, API |
+
+Regional Officer accounts open a placeholder page (the API already limits them to their states).
+
+## Audit trail
+Sign in as `sysadmin@aicte-india.org` (AICTE Administrator) to open `/aicte/admin`.
+- Every action is recorded in PostgreSQL (`audit_log`) in order: sign-in (including failed attempts) and sign-out, uploads, fixes and record edits, submissions, case referrals and closures, consent requests, decisions, revocations and record views, certificate checks, reports and exports, and registrations.
+- The server writes server-side events itself. The browser can only add events the server cannot see (certificate checks, report exports, draft entries), only for its own role, and always under the signed-in user.
+- Each entry stores the SHA-256 of `seq|time|user|role|organisation|category|event|details|previous hash`, so the entries form a chain.
+- "Verify integrity" downloads the trail and recomputes every hash in the browser, independently of the server (`GET /api/aicte/audit/verify` does the same check on the server). If anyone edits a row in the database, the check fails at that event and marks every later event as untrusted.
+- Click an event to see its full hash and the previous event's hash.
+- Filter by date, category, user or text, page through 25 events at a time, and export to Excel.
 `npm run sample` regenerates the sample Excel file (deterministic).
 
 ## Student and verifier
@@ -98,6 +128,9 @@ Printable certificate: /certificate/GTU-2026-CSE-0417 (use "Altered copy" for th
 The QR holds a compact JWS signed with ES256 (ECDSA P-256). Only the public key is in the app.
 `npm run credentials` creates a new university key and new QR codes; reprint certificates after running it.
 Consent is stored on the server, so the student (phone) and the verifier (laptop) can be on different devices.
+
+Consent requests carry a purpose (pre-employment verification, appointment or promotion, admission, education loan or scholarship, professional registration), a reference number for that purpose (offer letter, application number), how long access lasts (7, 15 or 30 days) and how long the verifier keeps the data (30, 90 or 180 days).
+The student allows with an OTP (consent number such as `CN-7731`), refuses, or revokes later. The verifier sees name, degree, year and award status only while consent is active; marks, category, address and date of birth are never shared. Every view is written to the student's access log.
 
 ## Hidden watermark (steganography)
 "Download digital copy" on the certificate page saves a PNG with an invisible watermark in its pixels:

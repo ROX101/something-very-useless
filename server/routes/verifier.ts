@@ -3,7 +3,7 @@ import { and, desc, eq } from 'drizzle-orm'
 import { decodeJwt } from 'jose'
 import { z } from 'zod'
 import { apaarRegistry, credentials, verificationRequests } from '../db/schema'
-import { audit } from '../lib/audit'
+import { audit, maskApaar } from '../lib/audit'
 import { requireRole } from '../lib/auth'
 import { next } from '../lib/counters'
 import { badRequest, conflict, handler, notFound, parse } from '../lib/http'
@@ -12,7 +12,9 @@ import { activeConsent, expireStale, log, toClient } from '../services/consent'
 const NewRequest = z.object({
   apaar: z.string().transform((s) => s.replace(/\s/g, '')).pipe(z.string().regex(/^\d{12}$/, 'Enter a 12-digit APAAR ID')),
   purpose: z.string().min(3).max(200),
+  reference: z.string().max(200).default(''),
   validityDays: z.number().int().min(1).max(90),
+  retentionDays: z.number().int().min(1).max(3650).default(30),
 })
 
 interface Subject { name?: string; degree?: string; year?: number }
@@ -40,10 +42,14 @@ export function verifierRoutes() {
       const id = `RQ-${await next(tx, 'request', 1001)}`
       const [row] = await tx.insert(verificationRequests).values({
         id, apaar: body.apaar, verifierUserId: req.user!.userId, verifier: req.user!.name, verifierOrg: req.user!.org,
-        purpose: body.purpose, validityDays: body.validityDays,
+        purpose: body.purpose, reference: body.reference, validityDays: body.validityDays, retentionDays: body.retentionDays,
       }).returning()
       await log(tx, body.apaar, req.user!.org, 'Requested to verify your degree')
-      await audit(tx, req.user!, { action: 'consent.request', entity: 'verification_request', entityId: id, payload: { apaar: body.apaar, purpose: body.purpose } })
+      await audit(tx, req.user!, {
+        category: 'Consent', action: 'Requested consent',
+        detail: `APAAR ${maskApaar(body.apaar)}, ${body.purpose}${body.reference ? `, ${body.reference}` : ''}`,
+        entity: 'verification_request', entityId: id,
+      })
       return row
     })
     res.status(201).json(toClient(created))
@@ -63,7 +69,7 @@ export function verifierRoutes() {
     const subject = cred ? ((decodeJwt(cred.jws).vc as { credentialSubject?: Subject } | undefined)?.credentialSubject ?? {}) : {}
 
     await log(req.db, apaar, req.user!.org, `Viewed your degree status (${consent.consentNo})`)
-    await audit(req.db, req.user!, { action: 'record.view', entity: 'student', entityId: apaar, payload: { consentNo: consent.consentNo } })
+    await audit(req.db, req.user!, { category: 'Verification', action: 'Viewed shared record', detail: `APAAR ${maskApaar(apaar)} under consent ${consent.consentNo}`, entity: 'student', entityId: apaar })
 
     res.json({
       consentNo: consent.consentNo,

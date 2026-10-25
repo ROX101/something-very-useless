@@ -6,6 +6,8 @@ import { createApp } from './app'
 import { createDb, createPool, runMigrations, type Db } from './db/client'
 import { seed } from './db/seed'
 import { auditLog, complianceAlerts, enrolments, institutions, users } from './db/schema'
+import { canonical, type TrailEntry } from './lib/audit'
+import { createHash } from 'node:crypto'
 import { readFileSync } from 'node:fs'
 import { generateDataset } from '../src/inst/data/generate'
 import { applyAllFixes } from '../src/inst/engine/rules'
@@ -248,9 +250,9 @@ describe('consent (DPDP s. 6)', () => {
 
   it('sends a request, then stops duplicates and unknown students', async () => {
     const v = await login('kabir.menon@tarangsoftware.in')
-    const first = await v.post('/api/verifier/requests').send({ apaar: APAAR, purpose: 'Employment verification', validityDays: 7 })
+    const first = await v.post('/api/verifier/requests').send({ apaar: APAAR, purpose: 'Pre-employment background verification', reference: 'Offer letter TSPL/HR/OL/2026/1187', validityDays: 7, retentionDays: 90 })
     expect(first.status).toBe(201)
-    expect(first.body).toMatchObject({ id: 'RQ-1001', status: 'Pending' })
+    expect(first.body).toMatchObject({ id: 'RQ-1001', status: 'Pending', reference: 'Offer letter TSPL/HR/OL/2026/1187', retentionDays: 90 })
     expect((await v.post('/api/verifier/requests').send({ apaar: APAAR, purpose: 'Employment verification', validityDays: 7 })).status).toBe(409)
     expect((await v.post('/api/verifier/requests').send({ apaar: '999999999999', purpose: 'Employment verification', validityDays: 7 })).status).toBe(404)
   })
@@ -330,18 +332,113 @@ describe('migration 0001 on a database seeded by the old version', () => {
   })
 })
 
-describe('audit log', () => {
-  it('is hash-chained and detects tampering', async () => {
-    const a = await login('sysadmin@aicte-india.org')
-    const ok = (await a.get('/api/aicte/audit/verify')).body
-    expect(ok.ok).toBe(true)
-    expect(ok.entries).toBeGreaterThan(20)
-    expect((await a.get('/api/aicte/audit?limit=5')).body).toHaveLength(5)
+describe('audit trail', () => {
+  const sha = (x: string) => createHash('sha256').update(x).digest('hex')
 
-    await db.update(auditLog).set({ payload: { forged: true } }).where(eq(auditLog.action, 'submission.create'))
+  it('records server events in readable form, including failed sign-ins', async () => {
+    await request(app).post('/api/auth/login').send({ userId: 'nodal@aranya-tech.edu.in', password: 'wrong' })
+    const a = await login('sysadmin@aicte-india.org')
+    const trail: TrailEntry[] = (await a.get('/api/aicte/audit/trail')).body
+    const find = (action: string) => trail.find((e) => e.action === action)
+    expect(find('Submitted enrolment data to AICTE')).toMatchObject({ actor: 'Dr. Sunanda Patil', role: 'Institution Admin (Nodal Officer)', category: 'Submission' })
+    expect(find('Submitted enrolment data to AICTE')!.detail).toMatch(/^Receipt AS-26-0417-0091, 507 records, 2 compliance alerts, SHA-256 [0-9a-f]{16}$/)
+    expect(find('Sign-in failed')).toMatchObject({ actor: 'Public', detail: 'nodal@aranya-tech.edu.in: wrong password' })
+    expect(find('Referred case to Regional Office')).toMatchObject({ category: 'Compliance', actor: 'Meena Iyer' })
+    expect(find('Allowed verification')!.detail).toContain('CN-7731 valid 7 days')
+    expect(find('Requested consent')!.detail).toContain('APAAR 4471 •••• ••18')
+  })
+
+  it('is a gap-free chain the browser can re-verify with the same format', async () => {
+    const a = await login('sysadmin@aicte-india.org')
+    const trail: TrailEntry[] = (await a.get('/api/aicte/audit/trail')).body
+    expect(trail.length).toBeGreaterThan(20)
+    let prev = '0'.repeat(64)
+    trail.forEach((e, i) => {
+      expect(e.seq).toBe(i + 1)
+      expect(e.prev).toBe(prev)
+      expect(sha([e.seq, e.at, e.actor, e.role, e.org, e.category, e.action, e.detail, e.prev].join('|'))).toBe(e.hash)
+      expect(canonical(e)).toBe([e.seq, e.at, e.actor, e.role, e.org, e.category, e.action, e.detail, e.prev].join('|'))
+      prev = e.hash
+    })
+    expect((await a.get('/api/aicte/audit/verify')).body).toMatchObject({ ok: true, entries: trail.length })
+  })
+
+  it('numbers entries 1..n with no gaps', async () => {
+    const before = (await db.execute<{ n: number }>(sql`select max(seq)::int as n from audit_log`)).rows[0].n
+    const n = await login('nodal@aranya-tech.edu.in')
+    expect((await n.post('/api/inst/submissions').send({ declaration: true })).status).toBe(201)
+    const after = (await db.execute<{ n: number; c: number }>(sql`select max(seq)::int as n, count(*)::int as c from audit_log`)).rows[0]
+    expect(after.n).toBe(after.c)
+    expect(after.n).toBeGreaterThan(before)
+  })
+
+  it('lets the browser add only its own kinds of events, under the signed-in user', async () => {
+    const v = await login('kabir.menon@tarangsoftware.in')
+    expect((await v.post('/api/audit').send({ category: 'Verification', action: 'Verified certificate', detail: 'GTU/2022/CSE/0417, signature valid', actor: 'Someone else' })).status).toBe(201)
+    expect((await v.post('/api/audit').send({ category: 'Reports', action: 'Generated report', detail: 'x' })).status).toBe(403)
+    expect((await v.post('/api/audit').send({ category: 'Submission', action: 'Submitted enrolment data to AICTE', detail: 'forged' })).status).toBe(400)
+    expect((await request(app).post('/api/audit').send({ category: 'Verification', action: 'x', detail: 'x' })).status).toBe(401)
+    const a = await login('sysadmin@aicte-india.org')
+    const last: TrailEntry = (await a.get('/api/aicte/audit/trail')).body.at(-2)
+    expect(last).toMatchObject({ action: 'Verified certificate', actor: 'Kabir Menon', org: 'Tarang Software Pvt. Ltd.' })
+  })
+
+  it('logs a record edit with its note', async () => {
+    const n = await login('nodal@aranya-tech.edu.in')
+    const rows = (await n.get('/api/inst/state')).body.upload.rows
+    const edited = { ...rows[0], NAME: rows[0].NAME }
+    await n.put('/api/inst/uploads/current/rows').send({ rows: [edited, ...rows.slice(1)], fixes: 0, note: { action: 'Edited student record', detail: `Row ${edited.rowNo}, ${edited.INST_STUDENT_ID}, ${edited.NAME}` } })
+    const a = await login('sysadmin@aicte-india.org')
+    const trail: TrailEntry[] = (await a.get('/api/aicte/audit/trail')).body
+    expect(trail.some((e) => e.action === 'Edited student record' && e.detail.startsWith(`Row ${edited.rowNo},`))).toBe(true)
+  })
+
+  it('detects an edited entry', async () => {
+    const a = await login('sysadmin@aicte-india.org')
+    await db.update(auditLog).set({ detail: 'Receipt AS-26-0417-0091, 9 records' }).where(eq(auditLog.action, 'Submitted enrolment data to AICTE'))
     const broken = (await a.get('/api/aicte/audit/verify')).body
     expect(broken.ok).toBe(false)
     expect(broken.brokenAt).toBeGreaterThan(0)
+  })
+})
+
+describe('migration 0002 on audit entries in the old format', () => {
+  it('fills in readable fields and rebuilds a valid chain', async () => {
+    await db.execute(sql`truncate audit_log`)
+    await db.execute(sql`insert into audit_log (seq, at, actor, role, action, entity, entity_id, payload, prev_hash, hash) values
+      (3, '2026-10-25T19:00:00.123Z', 'nodal@aranya-tech.edu.in', 'inst_admin', 'auth.login', 'user', 'nodal@aranya-tech.edu.in', '{}', repeat('0',64), repeat('a',64)),
+      (7, '2026-10-25T19:01:00.456Z', 'nodal@aranya-tech.edu.in', 'inst_admin', 'submission.create', 'submission', 'AS-26-0417-0091', '{"records": 507}', repeat('a',64), repeat('b',64)),
+      (9, '2026-10-25T19:02:00Z', 'ghost@example.com', 'student', 'consent.grant', 'verification_request', 'RQ-1', '{}', repeat('b',64), repeat('c',64))`)
+    const file = readFileSync('server/db/migrations/0002_audit_trail_format.sql', 'utf8')
+    const backfill = file.slice(file.indexOf('-- Backfill the readable fields'))
+    for (const stmt of backfill.split('--> statement-breakpoint')) await db.execute(sql.raw(stmt))
+
+    const a = await login('sysadmin@aicte-india.org')
+    const trail: TrailEntry[] = (await a.get('/api/aicte/audit/trail')).body
+    expect(trail.slice(0, 3).map((e) => [e.seq, e.actor, e.category, e.action])).toEqual([
+      [1, 'Dr. Sunanda Patil', 'Sign-in', 'Signed in'],
+      [2, 'Dr. Sunanda Patil', 'Submission', 'Submitted enrolment data to AICTE'],
+      [3, 'ghost@example.com', 'Consent', 'Allowed verification'],
+    ])
+    expect(trail[1].detail).toBe('AS-26-0417-0091, {"records": 507}')
+    // the sign-in just above was appended after the rebuilt entries and the whole chain verifies
+    expect((await a.get('/api/aicte/audit/verify')).body).toMatchObject({ ok: true, entries: 4 })
+  })
+})
+
+describe('registrations', () => {
+  it('stores student and organisation sign-up requests with a reference', async () => {
+    const s = await request(app).post('/api/public/registrations').send({ kind: 'student', apaar: '4471 2093 6618', mobile: '98765 43210' })
+    expect(s.status).toBe(201)
+    expect(s.body.ref).toBe('REG-2026-10001')
+    const o = await request(app).post('/api/public/registrations').send({ kind: 'org', org: 'Acme Hiring', email: 'hr@acme.in', purpose: 'Pre-employment background verification' })
+    expect(o.body.ref).toBe('REG-2026-10002')
+    expect((await request(app).post('/api/public/registrations').send({ kind: 'student', apaar: '123', mobile: '1' })).status).toBe(400)
+    const rows = (await db.execute<{ ref: string; kind: string }>(sql`select ref, kind from registrations order by ref`)).rows
+    expect(rows).toEqual([{ ref: 'REG-2026-10001', kind: 'student' }, { ref: 'REG-2026-10002', kind: 'org' }])
+    const a = await login('sysadmin@aicte-india.org')
+    const trail: TrailEntry[] = (await a.get('/api/aicte/audit/trail')).body
+    expect(trail.filter((e) => e.category === 'Registration').map((e) => e.actor)).toEqual(['Student applicant', 'hr@acme.in'])
   })
 })
 

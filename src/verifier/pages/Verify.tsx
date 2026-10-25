@@ -6,6 +6,7 @@ import { PageTitle, Panel, btn, formatDate, maskApaar } from '../../inst/ui/bits
 import { verifyCredential, type VerifyResult } from '../../verify/crypto'
 import { PRIVATE_FIELDS, activeConsent, useConsent, type SharedRecord } from '../../verify/consent'
 import { fingerprint, inspect, mergeRegions, type StegoReport } from '../../verify/stego'
+import { audit } from '../../audit/log'
 
 interface Mark { report: StegoReport; url: string; width: number; height: number; code: string | null }
 
@@ -47,7 +48,7 @@ export default function Verify() {
         actions={showing && !busy ? <button className={btn.primary} onClick={reset}>Scan another certificate</button> : undefined} />
 
       {!showing && (
-        <Panel flush className="mx-auto max-w-2xl">
+        <Panel flush className="mx-auto max-w-4xl">
           <div className="flex gap-1 border-b border-line px-3" role="tablist">
             {([['camera', 'Camera'], ['image', 'Upload image'], ['paste', 'Paste code']] as [Mode, string][]).map(([m, l]) => (
               <button key={m} role="tab" aria-selected={mode === m} onClick={() => { setMode(m); setError('') }}
@@ -71,9 +72,9 @@ export default function Verify() {
       )}
 
       {showing && (
-        <div className="mx-auto max-w-3xl">
+        <div className="mx-auto max-w-5xl">
           {busy && <Panel><p className="flex items-center gap-3 text-muted"><span className="h-4 w-4 animate-spin rounded-full border-2 border-line border-t-navy" aria-hidden />Checking the signature</p></Panel>}
-          {!busy && notice && <p role="status" className="mb-6 border-l-4 border-warn bg-warn-bg px-4 py-3 text-[15px] text-ink">{notice}</p>}
+          {!busy && notice && <p role="status" className="mb-6 border-l-4 border-warn bg-warn-bg px-4 py-3 text-[0.9375rem] text-ink">{notice}</p>}
           {!busy && result && <Result r={result} onReset={reset} />}
           {!busy && mark && <MarkPanel mark={mark} />}
         </div>
@@ -282,7 +283,7 @@ function MarkPanel({ mark }: { mark: Mark }) {
         <p className="text-ink">{head.text}</p>
       </div>
       {!noMark && (
-        <dl className="grid gap-x-8 gap-y-3 border-b border-line px-5 py-4 text-[15px] sm:grid-cols-3">
+        <dl className="grid gap-x-8 gap-y-3 border-b border-line px-5 py-4 text-[0.9375rem] sm:grid-cols-3">
           <div><dt className="text-sm text-muted">Certificate in watermark</dt><dd className="font-medium">{certNo || 'Unreadable'}</dd></div>
           <div><dt className="text-sm text-muted">Matches QR signature</dt><dd className="font-medium">{match === null ? 'QR not read' : match ? 'Yes' : 'No'}</dd></div>
           <div><dt className="text-sm text-muted">Areas checked</dt><dd className="font-medium tnum">{report.blocks.toLocaleString('en-IN')}, {report.edited.length} changed</dd></div>
@@ -313,6 +314,14 @@ function Result({ r, onReset }: { r: VerifyResult; onReset: () => void }) {
   const [shared, setShared] = useState<SharedRecord | null>(null)
   const [askErr, setAskErr] = useState('')
   const viewedFor = useRef<string | null>(null)
+  const scanned = useRef(false)
+
+  // The signature is checked in the browser, so the browser reports the result to the audit trail.
+  useEffect(() => {
+    if (scanned.current) return
+    scanned.current = true
+    audit('Verification', r.ok ? 'Verified certificate' : 'Rejected certificate', r.ok ? `${r.credential.vc.credentialSubject.sid}, signature valid, issued by ${r.issuer.name}` : r.reason)
+  }, [r])
 
   // The server checks consent again and writes the read to the student's access log.
   useEffect(() => {
@@ -325,7 +334,7 @@ function Result({ r, onReset }: { r: VerifyResult; onReset: () => void }) {
   async function ask() {
     setAskErr('')
     try {
-      await request({ apaar, purpose: 'Employment verification', validityDays: 7 })
+      await request({ apaar, purpose: 'Pre-employment background verification', reference: 'Offer letter TSPL/HR/OL/2026/1187', validityDays: 7, retentionDays: 30 })
     } catch (e) {
       setAskErr((e as Error).message)
     }
@@ -345,7 +354,7 @@ function Result({ r, onReset }: { r: VerifyResult; onReset: () => void }) {
       </div>
 
       {r.ok && consent && (
-        <dl className="grid gap-x-8 gap-y-3 border-b border-line px-5 py-4 text-[15px] sm:grid-cols-2">
+        <dl className="grid gap-x-8 gap-y-3 border-b border-line px-5 py-4 text-[0.9375rem] sm:grid-cols-2">
           <div><dt className="text-sm text-muted">Name</dt><dd className="font-semibold">{r.credential.vc.credentialSubject.name}</dd></div>
           <div><dt className="text-sm text-muted">Degree</dt><dd>{r.credential.vc.credentialSubject.degree}</dd></div>
           <div><dt className="text-sm text-muted">Year of award</dt><dd>{r.credential.vc.credentialSubject.year}</dd></div>
@@ -367,13 +376,13 @@ function Result({ r, onReset }: { r: VerifyResult; onReset: () => void }) {
 
       <ol className="space-y-2 px-5 py-4">
         {r.steps.map((s) => (
-          <li key={s.label} className="flex items-start gap-3 text-[15px]">
+          <li key={s.label} className="flex items-start gap-3 text-[0.9375rem]">
             <span className={`mt-0.5 font-semibold ${s.ok ? 'text-ok' : 'text-err'}`} aria-label={s.ok ? 'passed' : 'failed'}>{s.ok ? '✓' : '✗'}</span>
             <span><span className="font-medium text-ink">{s.label}</span><span className="text-muted">, {s.detail}</span></span>
           </li>
         ))}
         {r.ok && (
-          <li className="flex items-start gap-3 text-[15px]">
+          <li className="flex items-start gap-3 text-[0.9375rem]">
             <span className={`mt-0.5 font-semibold ${consent ? 'text-ok' : 'text-warn'}`}>{consent ? '✓' : '…'}</span>
             <span><span className="font-medium text-ink">Student consent</span><span className="text-muted">, {consent ? `${consent.consentNo} active` : 'not given yet'}</span></span>
           </li>

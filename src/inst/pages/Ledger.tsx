@@ -36,23 +36,23 @@ export default function Ledger() {
 
       <div className="grid divide-y divide-line rounded border border-line bg-white sm:grid-cols-3 sm:divide-x sm:divide-y-0">
         <div className="px-6 py-5">
-          <p className="text-[15px] text-muted">Within approved intake</p>
-          <p className="mt-1 text-[32px] font-semibold leading-none tnum">{totalRegular} <span className="text-lg font-normal text-muted">/ {totalIntake}</span></p>
+          <p className="text-[0.9375rem] text-muted">Within approved intake</p>
+          <p className="mt-1 text-[2rem] font-semibold leading-none tnum">{totalRegular} <span className="text-lg font-normal text-muted">/ {totalIntake}</span></p>
         </div>
         <div className="px-6 py-5">
-          <p className="text-[15px] text-muted">Supernumerary seats</p>
-          <p className="mt-1 text-[32px] font-semibold leading-none tnum">{totalSuper}</p>
+          <p className="text-[0.9375rem] text-muted">Supernumerary seats</p>
+          <p className="mt-1 text-[2rem] font-semibold leading-none tnum">{totalSuper}</p>
         </div>
         <div className="px-6 py-5">
-          <p className="text-[15px] text-muted">Excess admissions</p>
-          <p className={`mt-1 text-[32px] font-semibold leading-none tnum ${totalExcess ? 'text-err' : ''}`}>{totalExcess}</p>
+          <p className="text-[0.9375rem] text-muted">Excess admissions</p>
+          <p className={`mt-1 text-[2rem] font-semibold leading-none tnum ${totalExcess ? 'text-err' : ''}`}>{totalExcess}</p>
         </div>
       </div>
 
       <Card className="mt-6 p-5 sm:p-6">
         <div className="mb-5 flex flex-wrap items-center gap-x-5 gap-y-2 text-sm text-muted">
           <Legend className="bg-navy" label="Regular" />
-          <Legend className="bg-[#6B7FB8]" label="NRI (within intake)" />
+          <Legend className="bg-[#8A8A8A]" label="NRI (within intake)" />
           <Legend className="bg-err" label="Excess" />
           <span className="flex items-center gap-2"><span className="h-4 border-l-2 border-dashed border-ink" />Approved intake</span>
         </div>
@@ -80,7 +80,7 @@ export default function Ledger() {
                   <div className="absolute inset-y-0 left-0 flex origin-left animate-[growX_.7s_cubic-bezier(.2,.8,.2,1)_both] overflow-hidden rounded-l"
                     style={{ width: `${regW + nriW}%`, animationDelay: `${delay}ms` }}>
                     <div className="h-full bg-navy" style={{ width: `${(regW / (regW + nriW || 1)) * 100}%` }} />
-                    <div className="h-full bg-[#6B7FB8]" style={{ width: `${(nriW / (regW + nriW || 1)) * 100}%` }} />
+                    <div className="h-full bg-[#8A8A8A]" style={{ width: `${(nriW / (regW + nriW || 1)) * 100}%` }} />
                   </div>
                   <div className="absolute -inset-y-1.5 border-l-2 border-dashed border-ink" style={{ left: `${LINE}%` }} />
                   {l.excess > 0 && (
@@ -121,7 +121,7 @@ export default function Ledger() {
               <p className="flex items-center gap-2 font-semibold text-err"><LockIcon /> {l.programme.label}: {l.excess} excess admission{l.excess > 1 ? 's' : ''}</p>
               <ClauseChip clause="7.4(g)" />
             </div>
-            <p className="mt-1 text-[15px] text-ink">Excess admission is not allowed under any circumstances. This alert is shared with AICTE.</p>
+            <p className="mt-1 text-[0.9375rem] text-ink">Excess admission is not allowed under any circumstances. This alert is shared with AICTE.</p>
             <p className="mt-1 text-sm text-muted">Liable to: up to 5× total course fee per excess admission (cl. 7.3(g)), indicative</p>
           </div>
         ))}
@@ -130,7 +130,7 @@ export default function Ledger() {
           return (
             <div key={a.id} className="border-l-4 border-warn bg-white px-5 py-4">
               <p className="flex items-center gap-2 font-semibold text-warn"><LockIcon /> {a.title}</p>
-              <p className="mt-1 text-[15px] text-ink">{a.detail}{row && <>, APAAR <span className="whitespace-nowrap font-mono">{maskApaar(row.APAAR_ID)}</span>, {row.NAME}</>}</p>
+              <p className="mt-1 text-[0.9375rem] text-ink">{a.detail}{row && <>, APAAR <span className="whitespace-nowrap font-mono">{maskApaar(row.APAAR_ID)}</span>, {row.NAME}</>}</p>
               <p className="mt-1 text-sm text-muted">Cross-institution check against the AICTE central repository</p>
             </div>
           )

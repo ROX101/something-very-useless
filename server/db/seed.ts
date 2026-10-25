@@ -17,7 +17,7 @@ const USER_LINKS: Partial<Record<Role, { institutionPid?: string; apaar?: string
 }
 
 const TABLES = [
-  'audit_log', 'access_log', 'verification_requests', 'alert_actions', 'compliance_alerts', 'submissions',
+  'audit_log', 'registrations', 'access_log', 'verification_requests', 'alert_actions', 'compliance_alerts', 'submissions',
   'uploads', 'enrolments', 'credentials', 'apaar_registry', 'users', 'programmes', 'institutions', 'counters',
 ]
 

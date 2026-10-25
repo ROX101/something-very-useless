@@ -75,7 +75,7 @@ export default function Rings() {
         <Panel title="Institution risk score" className="min-w-0">
           <p className="font-semibold text-ink">{view.focus.name}</p>
           <p className="text-sm text-muted">{view.focus.city}{view.focus.state && `, ${view.focus.state}`}, PID {view.focus.pid}</p>
-          <p className="mt-4 font-serif text-[52px] font-medium leading-none text-err tnum">{risk?.risk ?? 0}<span className="text-2xl text-muted">/100</span></p>
+          <p className="mt-4 font-serif text-[3.25rem] font-medium leading-none text-err tnum">{risk?.risk ?? 0}<span className="text-2xl text-muted">/100</span></p>
           {risk ? (
             <ul className="mt-5 space-y-4">
               {risk.factors.map((f, i) => (
@@ -103,7 +103,7 @@ export default function Rings() {
       {showRows && (
         <Panel title={`Cross-enrolled students at ${view.focus.name}`} className="mt-6" flush>
           <div className="max-h-96 overflow-y-auto">
-            <table className="w-full text-[15px]">
+            <table className="w-full text-[0.9375rem]">
               <thead className="sticky top-0 border-b border-line bg-page"><tr><th className={th}>#</th><th className={th}>Student</th><th className={th}>APAAR</th><th className={th}>Also enrolled at</th></tr></thead>
               <tbody className="divide-y divide-line">
                 {view.rows.map((r, i) => (
@@ -130,7 +130,7 @@ export default function Rings() {
 function WatchList({ items }: { items: ReturnType<typeof useInsights>['watchlist'] }) {
   return (
     <Panel title="Risk watch-list" className="mt-6" flush>
-      <div className="overflow-x-auto"><table className="w-full text-[15px]">
+      <div className="overflow-x-auto"><table className="w-full text-[0.9375rem]">
         <thead className="border-b border-line bg-page/60"><tr><th className={th}>Institution</th><th className={th}>Main signal</th><th className={`${th} w-64`}>Risk score</th></tr></thead>
         <tbody className="divide-y divide-line">
           {!items.length && <tr><td colSpan={3} className="px-4 py-8 text-center text-muted">No institution has open alerts.</td></tr>}
@@ -197,12 +197,12 @@ function RingGraph({ nodes, edges, focusPid, score }: { nodes: Node[]; edges: Ed
         const focus = n.pid === focusPid
         return (
           <g key={n.pid} onMouseEnter={() => setHover(n.pid)} onMouseLeave={() => setHover(null)} className="cursor-default">
-            <circle cx={n.x} cy={n.y} r={n.r} fill={focus ? '#14235A' : '#FFFFFF'} stroke="#14235A" strokeWidth="2.5" />
-            <text x={n.x} y={n.y + 5} textAnchor="middle" fontSize={n.r > 30 ? 15 : 12} fontWeight="600" fill={focus ? '#FFFFFF' : '#14235A'}>
+            <circle cx={n.x} cy={n.y} r={n.r} fill={focus ? '#111111' : '#FFFFFF'} stroke="#111111" strokeWidth="2.5" />
+            <text x={n.x} y={n.y + 5} textAnchor="middle" fontSize={n.r > 30 ? 15 : 12} fontWeight="600" fill={focus ? '#FFFFFF' : '#111111'}>
               {focus ? (score ?? n.students) : (n.state || n.students)}
             </text>
-            <text x={n.x} y={n.y + n.r + 20} textAnchor="middle" fontSize="14" fontWeight="600" fill="#1A2233">{short(n.name)}</text>
-            <text x={n.x} y={n.y + n.r + 37} textAnchor="middle" fontSize="12.5" fill="#5B6577">{n.city}{n.state && `, ${n.state}`}</text>
+            <text x={n.x} y={n.y + n.r + 20} textAnchor="middle" fontSize="14" fontWeight="600" fill="#111111">{short(n.name)}</text>
+            <text x={n.x} y={n.y + n.r + 37} textAnchor="middle" fontSize="12.5" fill="#5C5C5C">{n.city}{n.state && `, ${n.state}`}</text>
           </g>
         )
       })}

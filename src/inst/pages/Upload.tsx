@@ -3,40 +3,55 @@ import { Link } from 'react-router-dom'
 import { InstLayout } from '../ui/InstLayout'
 import { Card, ClauseChip, CountUp, LockIcon, PageHeader, RuleChip, btn, formatApaar, formatDate, maskApaar } from '../ui/bits'
 import { useInst, useValidation } from '../store'
-import { parseWorkbook, downloadErrorReport, downloadTemplate, type ParsedFile } from '../excel'
+import { parseWorkbook, downloadErrorReport, downloadRows, downloadTemplate, type ParsedFile } from '../excel'
+import { blankRow } from '../fields'
+import { audit } from '../../audit/log'
+import { DataPreview } from '../ui/DataPreview'
+import { StudentDrawer, StudentForm } from '../ui/StudentForm'
 import { GATES, RULE_INFO, applyAllFixes, applyFix, runRules } from '../engine/rules'
-import { RULE_CONTEXT } from '../data/dataset'
+import { PREVIEW_CONTEXT } from '../data/dataset'
 import { INSTITUTION } from '../data/reference'
-import { COLUMNS, OPTIONAL_COLUMNS, type Flag, type RowResult, type RuleCode, type ValidationResult } from '../engine/types'
+import { COLUMNS, type Flag, type RowResult, type RuleCode, type UploadRow, type ValidationResult } from '../engine/types'
 
 type Phase = 'select' | 'mapped' | 'validating' | 'results'
 
 export default function Upload() {
-  const { rows, fileName, uploadedAt, fixesApplied, setUpload, setRows, clearUpload } = useInst()
+  const { rows, fileName, uploadedAt, fixesApplied, setUpload, setRows, clearUpload, saveRow, setDraft } = useInst()
   const result = useValidation()
   const [phase, setPhase] = useState<Phase>(rows ? 'results' : 'select')
   const [parsed, setParsed] = useState<{ file: string; data: ParsedFile } | null>(null)
-  const [error, setError] = useState('')
+  const [error, setError] = useState<{ text: string; missing?: string[]; extra?: string[] } | null>(null)
   const [pending, setPending] = useState<ValidationResult | null>(null)
 
   async function onFile(file: File) {
-    setError('')
-    if (!/\.(xlsx|xls|csv)$/i.test(file.name)) { setError('Upload an Excel (.xlsx) or CSV file.'); return }
+    setError(null)
+    if (!/\.(xlsx|xls|csv)$/i.test(file.name)) { setError({ text: `${file.name} is not an Excel or CSV file. Save it as .xlsx from the enrolment template and upload again.` }); return }
     try {
       const data = parseWorkbook(await file.arrayBuffer())
-      if (data.missing.length) { setError(`Missing required columns: ${data.missing.join(', ')}`); return }
-      if (!data.rows.length) { setError('The file has no data rows.'); return }
+      if (data.missing.length) {
+        setError({ text: `${file.name} does not follow the enrolment template, so it was not loaded. Copy the data into the template and upload again.`, missing: data.missing, extra: data.extra })
+        return
+      }
+      if (!data.rows.length) { setError({ text: `${file.name} has the right columns but no student rows. Add one row per student and upload again.` }); return }
       setParsed({ file: file.name, data })
       setPhase('mapped')
     } catch {
-      setError('This file could not be read. Use the enrolment template.')
+      setError({ text: `${file.name} could not be opened. Save it again as .xlsx from the enrolment template and upload again.` })
     }
   }
 
   function startValidation() {
     if (!parsed) return
-    setPending(runRules(parsed.data.rows, RULE_CONTEXT))
+    setPending(runRules(parsed.data.rows, PREVIEW_CONTEXT))
     setUpload(parsed.file, parsed.data.rows)
+    setPhase('validating')
+  }
+
+  function validateManual(list: UploadRow[]) {
+    const name = `Manual entry, ${new Date().toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' })}`
+    setPending(runRules(list, PREVIEW_CONTEXT))
+    setUpload(name, list)
+    setDraft([])
     setPhase('validating')
   }
 
@@ -48,9 +63,13 @@ export default function Upload() {
 
   return (
     <InstLayout>
-      {phase === 'select' && <SelectFile onFile={onFile} error={error} />}
+      {phase === 'select' && <SelectFile onFile={onFile} error={error} onManual={validateManual} />}
       {phase === 'mapped' && parsed && (
-        <Mapping parsed={parsed} onBack={() => { setParsed(null); setPhase('select') }} onValidate={startValidation} />
+        <Mapping parsed={parsed} onBack={() => { setParsed(null); setPhase('select') }} onValidate={startValidation}
+          onAdd={(row) => {
+            audit('Data', 'Added student to file before validation', `${parsed.file}, row ${row.rowNo}, ${row.INST_STUDENT_ID}, ${row.NAME}`)
+            setParsed((p) => (p ? { ...p, data: { ...p.data, rows: [...p.data.rows, row] } } : p))
+          }} />
       )}
       {phase === 'validating' && pending && <Validating result={pending} onDone={() => setPhase('results')} />}
       {phase === 'results' && result && rows && (
@@ -62,14 +81,16 @@ export default function Upload() {
           onReset={reset}
           onApplyAll={() => setRows(applyAllFixes(rows, result), result.fixable)}
           onApplyOne={(rowNo, f) => f.fix && setRows(applyFix(rows, rowNo, f.fix), 1)}
+          rows={rows}
+          onSaveRow={saveRow}
         />
       )}
     </InstLayout>
   )
 }
 
-function SelectFile({ onFile, error }: { onFile: (f: File) => void; error: string }) {
-  const [tab, setTab] = useState<'excel' | 'api'>('excel')
+function SelectFile({ onFile, error, onManual }: { onFile: (f: File) => void; error: { text: string; missing?: string[]; extra?: string[] } | null; onManual: (rows: UploadRow[]) => void }) {
+  const [tab, setTab] = useState<'excel' | 'manual' | 'api'>('excel')
   const [over, setOver] = useState(false)
   const input = useRef<HTMLInputElement>(null)
   const onDrop = (e: DragEvent) => {
@@ -78,53 +99,75 @@ function SelectFile({ onFile, error }: { onFile: (f: File) => void; error: strin
     const f = e.dataTransfer.files[0]
     if (f) onFile(f)
   }
+  const tabs = { excel: 'Upload Excel file', manual: 'Enter student by student', api: 'ERP via API' } as const
   return (
     <>
       <PageHeader title="Upload & validate" sub={`First-year admissions, AY ${INSTITUTION.ay}`} />
-      <div className="mb-4 flex gap-1 border-b border-line" role="tablist">
-        {(['excel', 'api'] as const).map((t) => (
+      <div className="mb-4 flex flex-wrap gap-1 border-b border-line" role="tablist">
+        {(Object.keys(tabs) as (keyof typeof tabs)[]).map((t) => (
           <button key={t} role="tab" aria-selected={tab === t} onClick={() => setTab(t)}
-            className={`-mb-px border-b-2 px-4 py-2.5 text-sm font-semibold ${tab === t ? 'border-navy text-navy' : 'border-transparent text-muted hover:text-ink'}`}>
-            {t === 'excel' ? 'Excel upload' : 'ERP via API'}
+            className={`-mb-px min-h-11 border-b-2 px-4 py-2.5 text-sm font-semibold ${tab === t ? 'border-navy text-navy' : 'border-transparent text-muted hover:text-ink'}`}>
+            {tabs[t]}
           </button>
         ))}
       </div>
 
-      {tab === 'excel' ? (
-        <Card className="p-6">
-          <div
-            onDragOver={(e) => { e.preventDefault(); setOver(true) }}
-            onDragLeave={() => setOver(false)}
-            onDrop={onDrop}
-            onClick={() => input.current?.click()}
-            role="button" tabIndex={0}
-            onKeyDown={(e) => (e.key === 'Enter' || e.key === ' ') && input.current?.click()}
-            className={`flex cursor-pointer flex-col items-center justify-center rounded border-2 border-dashed px-6 py-16 text-center transition ${over ? 'border-navy bg-navy-light' : 'border-line hover:border-navy/60 hover:bg-page'}`}>
-            <svg className="h-12 w-12 text-navy" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" aria-hidden>
-              <path d="M14 3H7a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V8z" /><path d="M14 3v5h5M9 13l2 2 4-4" />
-            </svg>
-            <p className="mt-4 text-lg font-semibold text-ink">Drop the admissions file here</p>
-            <p className="mt-1 text-sm text-muted">or <span className="font-semibold text-navy underline">browse</span>, .xlsx or .csv, one row per student</p>
-            <input ref={input} type="file" accept=".xlsx,.xls,.csv" className="hidden"
-              onChange={(e) => { const f = e.target.files?.[0]; if (f) onFile(f); e.target.value = '' }} />
-          </div>
-          {error && <p role="alert" className="mt-4 rounded border-l-4 border-err bg-err-bg px-4 py-3 text-sm text-err">{error}</p>}
-          <div className="mt-5 flex flex-wrap items-center justify-between gap-3 text-sm">
-            <span className="text-muted">15 columns: APAAR ID, student ID, name, DOB, programme, quota and status fields</span>
-            <div className="flex gap-4">
-              <button type="button" onClick={downloadTemplate} className={btn.ghost}>Download template</button>
-              <a href="/Aranya_AY2026-27_FirstYear.xlsx" download className={btn.ghost}>Download sample file</a>
+      {tab === 'excel' && (
+        <div className="grid gap-6 xl:grid-cols-[minmax(0,2fr)_minmax(0,1fr)]">
+          <Card className="p-6">
+            <div
+              onDragOver={(e) => { e.preventDefault(); setOver(true) }}
+              onDragLeave={() => setOver(false)}
+              onDrop={onDrop}
+              onClick={() => input.current?.click()}
+              role="button" tabIndex={0}
+              onKeyDown={(e) => (e.key === 'Enter' || e.key === ' ') && input.current?.click()}
+              className={`flex cursor-pointer flex-col items-center justify-center rounded border-2 border-dashed px-6 py-16 text-center ${over ? 'border-navy bg-navy-light' : 'border-line hover:border-navy/60 hover:bg-page'}`}>
+              <svg className="h-12 w-12 text-navy" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" aria-hidden>
+                <path d="M14 3H7a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V8z" /><path d="M14 3v5h5M9 13l2 2 4-4" />
+              </svg>
+              <p className="mt-4 text-lg font-semibold text-ink">Drop the filled enrolment template here</p>
+              <p className="mt-1 text-sm text-muted">or <span className="font-semibold text-navy underline">browse</span>, .xlsx or .csv, one row per student</p>
+              <input ref={input} type="file" accept=".xlsx,.xls,.csv" className="hidden"
+                onChange={(e) => { const f = e.target.files?.[0]; if (f) onFile(f); e.target.value = '' }} />
             </div>
-          </div>
-        </Card>
-      ) : (
+            {error && (
+              <div role="alert" className="mt-4 border-l-4 border-err bg-err-bg px-4 py-3 text-sm text-ink">
+                <p className="font-semibold text-err">{error.text}</p>
+                {error.missing && error.missing.length > 0 && <p className="mt-2">Missing columns: <span className="font-mono">{error.missing.join(', ')}</span></p>}
+                {error.extra && error.extra.length > 0 && <p className="mt-1">Columns not in the template: <span className="font-mono">{error.extra.join(', ')}</span></p>}
+                {error.missing && <button type="button" onClick={downloadTemplate} className={`${btn.secondary} mt-3`}>Download template</button>}
+              </div>
+            )}
+          </Card>
+
+          <Card className="p-6">
+            <h2 className="text-base font-semibold text-ink">Enrolment template</h2>
+            <p className="mt-1 text-sm text-muted">Every file must use this template. Column names and order are fixed.</p>
+            <ol className="mt-4 grid grid-cols-1 gap-x-4 gap-y-1 text-sm sm:grid-cols-2 xl:grid-cols-1 2xl:grid-cols-2">
+              {COLUMNS.map((c, i) => (
+                <li key={c} className="flex gap-2"><span className="w-5 text-right text-muted tnum">{i + 1}</span><span className="font-mono text-ink">{c}</span></li>
+              ))}
+            </ol>
+            <div className="mt-5 flex flex-wrap gap-3">
+              <button type="button" onClick={downloadTemplate} className={btn.primary}>Download template</button>
+              <a href="/Aranya_AY2026-27_FirstYear.xlsx" download className={btn.secondary}>Download sample file</a>
+            </div>
+            <p className="mt-3 text-sm text-muted">The template includes a Field guide sheet with the allowed values for each column.</p>
+          </Card>
+        </div>
+      )}
+
+      {tab === 'manual' && <ManualEntry onValidate={onManual} />}
+
+      {tab === 'api' && (
         <Card className="p-6">
           <div className="flex flex-wrap items-center gap-2">
             <span className="rounded bg-ok-bg px-2 py-0.5 text-xs font-semibold text-igreen">OpenAPI 3.1</span>
             <span className="rounded bg-page px-2 py-0.5 text-xs font-semibold text-ink">API key + mTLS</span>
             <span className="rounded bg-page px-2 py-0.5 text-xs font-semibold text-ink">Batches of up to 1,000 records</span>
           </div>
-          <pre className="mt-4 overflow-x-auto rounded bg-slate-900 p-5 text-[13px] leading-relaxed text-slate-100">{`POST /v1/institutions/${INSTITUTION.pid}/enrolments:batch
+          <pre className="mt-4 overflow-x-auto rounded bg-neutral-900 p-5 text-[0.8125rem] leading-relaxed text-neutral-100">{`POST /v1/institutions/${INSTITUTION.pid}/enrolments:batch
 Authorization: Bearer <client-credentials token>
 Idempotency-Key: 6f1c2e0a-…
 
@@ -145,34 +188,109 @@ Idempotency-Key: 6f1c2e0a-…
   )
 }
 
-function Mapping({ parsed, onBack, onValidate }: { parsed: { file: string; data: ParsedFile }; onBack: () => void; onValidate: () => void }) {
-  const { data } = parsed
+function ManualEntry({ onValidate }: { onValidate: (rows: UploadRow[]) => void }) {
+  const { draft, setDraft } = useInst()
+  const [editing, setEditing] = useState<number | null>(null)
+  const [last, setLast] = useState('')
+  const [carry, setCarry] = useState<Partial<UploadRow>>({})
+  const nextNo = draft.length + 2
+  const initial = useMemo(() => ({ ...blankRow(nextNo), ...carry }), [nextNo, carry])
+  const renumber = (list: UploadRow[]) => list.map((r, i) => ({ ...r, rowNo: i + 2 }))
+  const editRow = editing !== null ? draft.find((r) => r.rowNo === editing) ?? null : null
+
   return (
     <>
-      <PageHeader title="Check columns" sub={<>{parsed.file}, sheet “{data.sheetName}”, {data.rows.length.toLocaleString('en-IN')} rows</>} />
       <Card className="p-6">
-        <p className="text-sm font-semibold text-ink">
-          {COLUMNS.length - OPTIONAL_COLUMNS.length} required columns mapped, {OPTIONAL_COLUMNS.length} optional
-        </p>
-        <div className="mt-4 grid gap-2 sm:grid-cols-2 lg:grid-cols-3">
-          {COLUMNS.map((c, i) => {
-            const ok = data.found.includes(c)
-            return (
-              <div key={c} style={{ animationDelay: `${i * 45}ms` }}
-                className="animate-[fadeUp_.35s_ease-out_both] flex items-center justify-between rounded border border-line px-3 py-2">
-                <span className="font-mono text-[13px] text-ink">{c}</span>
-                <span className={`flex items-center gap-1.5 text-xs font-semibold ${ok ? 'text-igreen' : 'text-muted'}`}>
-                  {ok ? '✓ Mapped' : 'Optional'}
-                </span>
-              </div>
-            )
-          })}
+        <div className="mb-5 flex flex-wrap items-baseline justify-between gap-3">
+          <h2 className="text-base font-semibold text-ink">Add a student</h2>
+          <span className="text-sm text-muted">Row {nextNo} of the enrolment sheet</span>
         </div>
-        <div className="mt-6 flex flex-wrap gap-3">
-          <button className={btn.primary} onClick={onValidate}>Validate {data.rows.length.toLocaleString('en-IN')} rows</button>
-          <button className={btn.secondary} onClick={onBack}>Choose another file</button>
-        </div>
+        <StudentForm initial={initial} submitLabel="Add student"
+          onSubmit={(row) => {
+            setCarry({ PROGRAMME: row.PROGRAMME, QUOTA: row.QUOTA, ADMISSION_DATE: row.ADMISSION_DATE })
+            setDraft([...draft, { ...row, rowNo: nextNo }], { action: 'Entered student manually', detail: `Row ${nextNo}, ${row.INST_STUDENT_ID}, ${row.NAME}` })
+            setLast(`Added row ${nextNo}, ${row.NAME}.`)
+          }} />
+        {last && <p role="status" className="mt-4 border-l-4 border-ok bg-ok-bg px-4 py-2 text-sm text-ink">{last}</p>}
       </Card>
+
+      <div className="mt-6">
+        <DataPreview rows={draft} title={`Entered so far (${draft.length})`} emptyText="Students you add appear here, one row each, in the same columns as the Excel template."
+          onEdit={setEditing}
+          onRemove={(n) => { const row = draft.find((r) => r.rowNo === n); setDraft(renumber(draft.filter((r) => r.rowNo !== n)), { action: 'Removed manual entry', detail: `Row ${n}, ${row?.NAME ?? ''}` }) }}
+          actions={draft.length > 0 && <>
+            <button className={btn.secondary} onClick={() => downloadRows(draft, 'Manual_entries_AY2026-27')}>Download as Excel</button>
+            <button className={btn.primary} onClick={() => onValidate(draft)}>Validate {draft.length} student{draft.length === 1 ? '' : 's'}</button>
+          </>} />
+      </div>
+
+      {editRow && (
+        <StudentDrawer title={editRow.NAME || `Row ${editRow.rowNo}`} sub={`Edit row ${editRow.rowNo}`} initial={editRow} submitLabel="Save changes"
+          onClose={() => setEditing(null)}
+          onSubmit={(row) => { setDraft(draft.map((r) => (r.rowNo === editRow.rowNo ? { ...row, rowNo: editRow.rowNo } : r)), { action: 'Edited manual entry', detail: `Row ${editRow.rowNo}, ${row.NAME}` }); setEditing(null) }} />
+      )}
+    </>
+  )
+}
+
+function AddStudentPanel({ nextNo, sheet, onAdd }: { nextNo: number; sheet: string; onAdd: (row: UploadRow) => void }) {
+  const [carry, setCarry] = useState<Partial<UploadRow>>({})
+  const [last, setLast] = useState('')
+  const initial = useMemo(() => ({ ...blankRow(nextNo), ...carry }), [nextNo, carry])
+  return (
+    <Card className="p-6">
+      <div className="mb-5 flex flex-wrap items-baseline justify-between gap-3">
+        <h2 className="text-base font-semibold text-ink">Add a student</h2>
+        <span className="text-sm text-muted">Row {nextNo} of {sheet}</span>
+      </div>
+      <StudentForm initial={initial} submitLabel="Add student"
+        onSubmit={(row) => {
+          setCarry({ PROGRAMME: row.PROGRAMME, QUOTA: row.QUOTA, ADMISSION_DATE: row.ADMISSION_DATE })
+          onAdd({ ...row, rowNo: nextNo })
+          setLast(`Added row ${nextNo}, ${row.NAME}.`)
+        }} />
+      {last && <p role="status" className="mt-4 border-l-4 border-ok bg-ok-bg px-4 py-2 text-sm text-ink">{last}</p>}
+    </Card>
+  )
+}
+
+function Tabs<T extends string>({ value, onChange, items }: { value: T; onChange: (v: T) => void; items: [T, string][] }) {
+  return (
+    <div className="flex flex-wrap gap-1 border-b border-line" role="tablist">
+      {items.map(([k, label]) => (
+        <button key={k} role="tab" aria-selected={value === k} onClick={() => onChange(k)}
+          className={`-mb-px min-h-11 border-b-2 px-4 py-2.5 text-sm font-semibold ${value === k ? 'border-navy text-navy' : 'border-transparent text-muted hover:text-ink'}`}>
+          {label}
+        </button>
+      ))}
+    </div>
+  )
+}
+
+function Mapping({ parsed, onBack, onValidate, onAdd }: { parsed: { file: string; data: ParsedFile }; onBack: () => void; onValidate: () => void; onAdd: (row: UploadRow) => void }) {
+  const { data } = parsed
+  const [tab, setTab] = useState<'rows' | 'add'>('rows')
+  const nextNo = data.rows.reduce((m, r) => Math.max(m, r.rowNo), 1) + 1
+  return (
+    <>
+      <PageHeader title="Preview file" sub={<>{parsed.file}, sheet “{data.sheetName}”, {data.rows.length.toLocaleString('en-IN')} rows</>}
+        actions={<>
+          <button className={btn.secondary} onClick={onBack}>Choose another file</button>
+          <button className={btn.primary} onClick={onValidate}>Validate {data.rows.length.toLocaleString('en-IN')} rows</button>
+        </>} />
+      <div className="mb-6 flex flex-wrap items-center gap-x-6 gap-y-2 border-l-4 border-ok bg-white px-5 py-4 text-[0.9375rem]">
+        <span className="font-semibold text-ink">Template columns found: {data.found.length} of {COLUMNS.length}</span>
+        {COLUMNS.filter((c) => !data.found.includes(c)).length > 0 && (
+          <span className="text-muted">Optional column not in file: {COLUMNS.filter((c) => !data.found.includes(c)).join(', ')}</span>
+        )}
+        {data.extra.length > 0 && <span className="text-muted">Ignored columns: {data.extra.join(', ')}</span>}
+      </div>
+      <Tabs value={tab} onChange={setTab} items={[['rows', `Rows in file (${data.rows.length.toLocaleString('en-IN')})`], ['add', 'Add a student']]} />
+      <div className="mt-6">
+        {tab === 'rows'
+          ? <DataPreview rows={data.rows} title={`All rows in ${parsed.file}`} />
+          : <AddStudentPanel nextNo={nextNo} sheet={parsed.file} onAdd={onAdd} />}
+      </div>
     </>
   )
 }
@@ -261,9 +379,15 @@ function Results(props: {
   onReset: () => void
   onApplyAll: () => void
   onApplyOne: (rowNo: number, f: Flag) => void
+  rows: UploadRow[]
+  onSaveRow: (row: UploadRow) => void
 }) {
   const { result, fileName, uploadedAt, fixesApplied } = props
   const [drawer, setDrawer] = useState<number | null>(null)
+  const [view, setView] = useState<'issues' | 'records' | 'add'>('issues')
+  const [editing, setEditing] = useState<UploadRow | null>(null)
+  const nextNo = props.rows.reduce((m, r) => Math.max(m, r.rowNo), 1) + 1
+  const newRow = useMemo(() => blankRow(nextNo), [nextNo])
 
   const groups = useMemo(() => {
     const errors = new Map<RuleCode, Item[]>()
@@ -287,6 +411,7 @@ function Results(props: {
         title="Validation results"
         sub={<>{fileName}{uploadedAt && <>, uploaded {formatDate(uploadedAt)}</>}</>}
         actions={<>
+          <button className={btn.secondary} onClick={() => downloadRows(props.rows, fileName || 'Enrolment_data')}>Download data (.xlsx)</button>
           <button className={btn.secondary} onClick={() => downloadErrorReport(result, fileName)}>Download issues (.xlsx)</button>
           <button className={btn.secondary} onClick={props.onReset}>Upload new file</button>
         </>}
@@ -322,7 +447,25 @@ function Results(props: {
         </div>
       )}
 
-      {groups.errors.length > 0 && (
+      <div className="mt-8">
+        <Tabs value={view} onChange={setView} items={[['issues', 'Issues'], ['records', `All records (${result.counts.total.toLocaleString('en-IN')})`], ['add', 'Add a student']]} />
+      </div>
+
+      {view === 'add' && (
+        <div className="mt-6">
+          <AddStudentPanel nextNo={nextNo} sheet={fileName} onAdd={props.onSaveRow} />
+        </div>
+      )}
+
+      {view === 'records' && (
+        <div className="mt-6">
+          <DataPreview rows={props.rows} results={result.rows} title={fileName}
+            onEdit={(n) => setEditing(props.rows.find((r) => r.rowNo === n) ?? null)}
+            actions={<button className={btn.primary} onClick={() => setEditing(newRow)}>Add student</button>} />
+        </div>
+      )}
+
+      {view === 'issues' && groups.errors.length > 0 && (
         <Section title="Data errors" note="Fix these in the file, or apply the suggested fix.">
           {groups.errors.map(([rule, items]) => (
             <IssueGroup key={rule} rule={rule} kind="error" items={items} onOpen={setDrawer} />
@@ -330,7 +473,7 @@ function Results(props: {
         </Section>
       )}
 
-      {result.alerts.length > 0 && (
+      {view === 'issues' && result.alerts.length > 0 && (
         <Section title="Compliance alerts" note="Cannot be cleared by the institution, shared with AICTE" icon={<LockIcon className="h-4 w-4 text-warn" />}>
           {result.alerts.map((a) => (
             <div key={a.id} className="px-5 py-4">
@@ -363,12 +506,21 @@ function Results(props: {
         </Section>
       )}
 
-      {groups.autos.length > 0 && (
+      {view === 'issues' && groups.autos.length > 0 && (
         <Section title="Auto-cleared" note="Checked and accepted. No action needed.">
           {groups.autos.map(([rule, items]) => (
             <IssueGroup key={rule} rule={rule} kind="auto" items={items} onOpen={setDrawer} />
           ))}
         </Section>
+      )}
+
+      {editing && (
+        <StudentDrawer
+          title={editing.NAME || 'New student'}
+          sub={props.rows.some((r) => r.rowNo === editing.rowNo) ? `Edit row ${editing.rowNo}` : `New row ${editing.rowNo}`}
+          initial={editing} submitLabel={props.rows.some((r) => r.rowNo === editing.rowNo) ? 'Save changes' : 'Add student'}
+          onClose={() => setEditing(null)}
+          onSubmit={(row) => { props.onSaveRow({ ...row, rowNo: editing.rowNo }); setEditing(null) }} />
       )}
 
       {open && (
@@ -382,8 +534,8 @@ function Results(props: {
 function Stat({ label, value, tone }: { label: string; value: number; tone: string }) {
   return (
     <div className="px-6 py-5">
-      <p className="text-[15px] text-muted">{label}</p>
-      <CountUp value={value} className={`mt-1 block text-[40px] font-semibold leading-none tabular-nums ${tone}`} />
+      <p className="text-[0.9375rem] text-muted">{label}</p>
+      <CountUp value={value} className={`mt-1 block text-[2.5rem] font-semibold leading-none tabular-nums ${tone}`} />
     </div>
   )
 }
@@ -430,7 +582,7 @@ function IssueGroup({ rule, kind, items, onOpen }: { rule: RuleCode; kind: 'erro
       {open && (
         <div className="overflow-x-auto border-t border-line">
           <table className="w-full text-sm">
-            <thead className="bg-page/70 text-left text-[13px] text-muted">
+            <thead className="bg-page/70 text-left text-[0.8125rem] text-muted">
               <tr>
                 <th className="px-5 py-2 font-semibold">Row</th>
                 <th className="px-3 py-2 font-semibold">Student</th>
@@ -478,7 +630,7 @@ function RowDrawer({ rr, onClose, onFix }: { rr: RowResult; onClose: () => void;
   const flaggedFields = new Set(rr.flags.map((f) => f.field).filter(Boolean))
   return (
     <div className="fixed inset-0 z-40 flex justify-end" role="dialog" aria-modal="true" aria-label={`Row ${rr.row.rowNo}`}>
-      <button className="absolute inset-0 bg-slate-900/30" onClick={onClose} aria-label="Close" />
+      <button className="absolute inset-0 bg-neutral-900/30" onClick={onClose} aria-label="Close" />
       <div className="relative flex h-full w-full max-w-md animate-[slideIn_.25s_ease-out] flex-col bg-white shadow-xl">
         <div className="flex items-start justify-between border-b border-line px-6 py-5">
           <div>

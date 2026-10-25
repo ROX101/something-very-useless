@@ -129,7 +129,9 @@ export const verificationRequests = pgTable('verification_requests', {
   verifier: text('verifier').notNull(),
   verifierOrg: text('verifier_org').notNull(),
   purpose: text('purpose').notNull(),
+  reference: text('reference').notNull().default(''),
   validityDays: integer('validity_days').notNull(),
+  retentionDays: integer('retention_days').notNull().default(30),
   createdAt: ts('created_at').notNull().defaultNow(),
   status: varchar('status', { length: 12 }).notNull().default('Pending'),
   decidedAt: ts('decided_at'),
@@ -145,12 +147,21 @@ export const accessLog = pgTable('access_log', {
   action: text('action').notNull(),
 }, (t) => [index('access_log_apaar_idx').on(t.apaar, t.at)])
 
+/**
+ * Hash-chained audit trail. hash = SHA-256 of seq|at|actorName|roleLabel|org|category|action|detail|prevHash,
+ * the same format the browser's Audit Trail page re-checks. actor/role/entity/entityId are for filtering only.
+ */
 export const auditLog = pgTable('audit_log', {
   seq: bigserial('seq', { mode: 'number' }).primaryKey(),
   at: ts('at').notNull().defaultNow(),
   actor: text('actor').notNull(),
   role: varchar('role', { length: 24 }).notNull(),
+  actorName: text('actor_name').notNull().default(''),
+  roleLabel: text('role_label').notNull().default(''),
+  org: text('org').notNull().default(''),
+  category: varchar('category', { length: 24 }).notNull().default('System'),
   action: text('action').notNull(),
+  detail: text('detail').notNull().default(''),
   entity: text('entity').notNull(),
   entityId: text('entity_id').notNull(),
   payload: jsonb('payload').$type<Record<string, unknown>>().notNull().default({}),
@@ -165,6 +176,19 @@ export const credentials = pgTable('credentials', {
   issuedAt: ts('issued_at').notNull().defaultNow(),
   revoked: boolean('revoked').notNull().default(false),
   revokedReason: text('revoked_reason'),
+})
+
+/** Sign-up requests from the public Register page, reviewed by AICTE before an account is created. */
+export const registrations = pgTable('registrations', {
+  ref: text('ref').primaryKey(),
+  kind: varchar('kind', { length: 8 }).notNull(),
+  apaar: char('apaar', { length: 12 }),
+  mobile: varchar('mobile', { length: 10 }),
+  org: text('org'),
+  email: text('email'),
+  purpose: text('purpose'),
+  status: varchar('status', { length: 12 }).notNull().default('Received'),
+  createdAt: ts('created_at').notNull().defaultNow(),
 })
 
 export const counters = pgTable('counters', {

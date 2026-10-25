@@ -14,6 +14,7 @@ import { aicteRoutes } from './routes/aicte'
 import { studentRoutes } from './routes/student'
 import { verifierRoutes } from './routes/verifier'
 import { publicRoutes } from './routes/public'
+import { auditRoutes } from './routes/audit'
 
 export interface AppOptions {
   db: Db
@@ -61,6 +62,7 @@ export function createApp({ db, staticDir, loginLimit }: AppOptions) {
   api.use('/student', studentRoutes())
   api.use('/verifier', verifierRoutes())
   api.use('/public', publicRoutes())
+  api.use('/audit', auditRoutes())
   api.use((_req, _res, next) => next(notFound('No such API route')))
   api.use(errorHandler)
   app.use('/api', api)

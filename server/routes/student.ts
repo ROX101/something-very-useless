@@ -51,7 +51,11 @@ export function studentRoutes() {
       await log(tx, row.apaar, 'You', status === 'Approved'
         ? `Allowed ${row.verifierOrg} to verify your degree (${consentNo})`
         : `Refused the request from ${row.verifierOrg}`)
-      await audit(tx, req.user!, { action: `consent.${status === 'Approved' ? 'grant' : 'refuse'}`, entity: 'verification_request', entityId: row.id, payload: { verifierOrg: row.verifierOrg, consentNo } })
+      await audit(tx, req.user!, {
+        category: 'Consent', action: status === 'Approved' ? 'Allowed verification' : 'Refused verification',
+        detail: `${row.verifierOrg}, ${row.purpose}${consentNo ? `, ${consentNo} valid ${row.validityDays} days` : ''}`,
+        entity: 'verification_request', entityId: row.id,
+      })
       return u
     })
     res.json(toClient(updated))
@@ -66,7 +70,7 @@ export function studentRoutes() {
         .set({ status: 'Revoked', decidedAt: new Date().toISOString() })
         .where(eq(verificationRequests.id, row.id)).returning()
       await log(tx, row.apaar, 'You', `Revoked consent ${row.consentNo} for ${row.verifierOrg}`)
-      await audit(tx, req.user!, { action: 'consent.revoke', entity: 'verification_request', entityId: row.id, payload: { consentNo: row.consentNo } })
+      await audit(tx, req.user!, { category: 'Consent', action: 'Revoked consent', detail: `${row.consentNo}, ${row.verifierOrg}`, entity: 'verification_request', entityId: row.id })
       return u
     })
     res.json(toClient(updated))

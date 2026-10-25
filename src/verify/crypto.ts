@@ -57,7 +57,7 @@ export async function verifyCredential(raw: string): Promise<VerifyResult> {
   const header = parts.length === 3 ? decodePart<{ alg: string; kid: string }>(parts[0]) : null
   if (!header) {
     steps.push({ label: 'Read the code', ok: false, detail: 'Not a signed credential' })
-    return { ok: false, reason: 'This QR code is not a signed APAAR-Sathi credential.', steps }
+    return { ok: false, reason: 'This QR code is not a signed APAAR credential.', steps }
   }
   steps.push({ label: 'Read the code', ok: true, detail: `${header.alg}, key ${header.kid}` })
 

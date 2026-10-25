@@ -26,7 +26,7 @@ export default function Record() {
         ))}
 
         <Panel title="Student" flush>
-          <dl className="grid gap-x-8 gap-y-4 px-5 py-4 text-[15px] sm:grid-cols-2 lg:grid-cols-4">
+          <dl className="grid gap-x-8 gap-y-4 px-5 py-4 text-[0.9375rem] sm:grid-cols-2 lg:grid-cols-4">
             <div><dt className="text-sm text-muted">Name</dt><dd className="mt-0.5 font-semibold">{STUDENT.name}</dd></div>
             <div><dt className="text-sm text-muted">APAAR ID</dt><dd className="mt-0.5 font-mono">{formatApaar(STUDENT.apaar)}</dd></div>
             <div><dt className="text-sm text-muted">University enrolment number</dt><dd className="mt-0.5">{STUDENT.studentId}</dd></div>
@@ -37,7 +37,7 @@ export default function Record() {
         <div className="grid gap-6 lg:grid-cols-[1.4fr_1fr]">
           <Panel title={`Enrolment history, ${STUDENT.programme}`} className="min-w-0" flush>
             <div className="overflow-x-auto">
-              <table className="w-full text-[15px]">
+              <table className="w-full text-[0.9375rem]">
                 <thead className="border-b border-line bg-page/60">
                   <tr><th className={th}>Academic year</th><th className={th}>Year of study</th><th className={th}>Status</th><th className={th}>Reported to AICTE</th></tr>
                 </thead>
@@ -59,7 +59,7 @@ export default function Record() {
           <Panel title="Degree certificate" className="min-w-0">
             <div className="flex flex-col gap-5 sm:flex-row lg:flex-col xl:flex-row">
               <div className="rounded border border-line p-2"><QrCode value={GENUINE_JWS} size={150} label="Signed QR code of your degree" /></div>
-              <div className="text-[15px]">
+              <div className="text-[0.9375rem]">
                 <p className="font-semibold">Bachelor of Technology in Computer Science & Engineering</p>
                 <p className="text-muted">{STUDENT.university}, 2026</p>
                 <p className="mt-3 font-semibold text-ok">Valid, signed by the university</p>

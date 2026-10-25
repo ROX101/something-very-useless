@@ -1,12 +1,14 @@
 import * as XLSX from 'xlsx'
 import { COLUMNS, OPTIONAL_COLUMNS, type Column, type UploadRow, type ValidationResult } from './engine/types'
 import { RULE_INFO } from './engine/rules'
+import { FIELDS } from './fields'
 
 export interface ParsedFile {
   sheetName: string
   headers: string[]
   found: Column[]
   missing: Column[]
+  extra: string[]
   rows: UploadRow[]
 }
 
@@ -19,6 +21,8 @@ export function parseWorkbook(data: ArrayBuffer): ParsedFile {
   const index = new Map(headers.map((h, i) => [h.toUpperCase().replace(/\s+/g, '_'), i]))
   const found = COLUMNS.filter((c) => index.has(c))
   const missing = COLUMNS.filter((c) => !index.has(c) && !OPTIONAL_COLUMNS.includes(c))
+  const known = new Set<string>(COLUMNS)
+  const extra = headers.filter((h) => h && !known.has(h.toUpperCase().replace(/\s+/g, '_')))
   const rows: UploadRow[] = []
   aoa.slice(1).forEach((line, i) => {
     if (!line.some((v) => String(v).trim() !== '')) return
@@ -29,7 +33,7 @@ export function parseWorkbook(data: ArrayBuffer): ParsedFile {
     }
     rows.push(row)
   })
-  return { sheetName, headers, found, missing, rows }
+  return { sheetName, headers, found, missing, extra, rows }
 }
 
 function sheetFrom(rows: (string | number)[][]) {
@@ -46,7 +50,26 @@ export function workbookFromRows(rows: UploadRow[]): XLSX.WorkBook {
 }
 
 export function downloadTemplate() {
-  XLSX.writeFile(workbookFromRows([]), 'APAAR-Sathi_Enrolment_Template.xlsx')
+  const wb = workbookFromRows([])
+  const guide = [
+    ['Column', 'Field', 'Required', 'Format or allowed values', 'Example'],
+    ...COLUMNS.map((c) => {
+      const f = FIELDS.find((x) => x.col === c)!
+      return [c, f.label, f.required ? 'Yes' : c === 'APAAR_ID' ? 'Yes, unless an APAAR exception is given' : 'No', f.format, f.example]
+    }),
+    [],
+    ['Rules'],
+    ['Keep the column names and their order exactly as in the Admissions sheet. Do not add, rename or remove columns.'],
+    ['One row per student. Dates as YYYY-MM-DD. Codes in capital letters as listed above.'],
+  ]
+  const ws = XLSX.utils.aoa_to_sheet(guide)
+  ws['!cols'] = [{ wch: 18 }, { wch: 24 }, { wch: 38 }, { wch: 70 }, { wch: 16 }]
+  XLSX.utils.book_append_sheet(wb, ws, 'Field guide')
+  XLSX.writeFile(wb, 'APAAR_Enrolment_Template_AY2026-27.xlsx')
+}
+
+export function downloadRows(rows: UploadRow[], name: string) {
+  XLSX.writeFile(workbookFromRows(rows), `${name.replace(/\.xlsx$/i, '').replace(/[^A-Za-z0-9_-]+/g, '_')}.xlsx`)
 }
 
 export function downloadErrorReport(result: ValidationResult, fileName: string) {

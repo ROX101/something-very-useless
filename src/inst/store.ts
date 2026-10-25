@@ -2,9 +2,10 @@ import { create } from 'zustand'
 import { useMemo } from 'react'
 import type { OtherEnrolment, UploadRow } from './engine/types'
 import { runRules } from './engine/rules'
-import { RULE_CONTEXT } from './data/dataset'
+import { PREVIEW_CONTEXT } from './data/dataset'
 import { api } from '../api'
 import { onSignOut } from '../store'
+import { audit } from '../audit/log'
 
 export interface Submission {
   receiptNo: string
@@ -23,6 +24,9 @@ interface ServerState {
   submissions: Submission[]
 }
 
+/** Describes a change for the audit trail, e.g. "Edited student record". */
+export interface Note { action: string; detail: string }
+
 interface Data {
   fileName: string | null
   rows: UploadRow[] | null
@@ -31,6 +35,8 @@ interface Data {
   submissions: Submission[]
   /** Students in this upload who are enrolled at another institution, as known to the server (R10). */
   crossEnrolments: OtherEnrolment[]
+  /** Manual entries not yet sent for validation. Kept in this browser only, like an unsaved form. */
+  draft: UploadRow[]
   loaded: boolean
   /** Last failed save, shown by InstLayout so nothing fails silently. */
   error: string | null
@@ -39,13 +45,34 @@ interface Data {
 interface InstState extends Data {
   hydrate: () => Promise<void>
   setUpload: (fileName: string, rows: UploadRow[]) => void
-  setRows: (rows: UploadRow[], fixes: number) => void
+  setRows: (rows: UploadRow[], fixes: number, note?: Note) => void
+  /** Adds a student row, or replaces the row with the same row number. */
+  saveRow: (row: UploadRow) => void
+  setDraft: (draft: UploadRow[], note?: Note) => void
   clearUpload: () => void
   submit: () => Promise<Submission>
   dismissError: () => void
 }
 
-const empty: Data = { fileName: null, rows: null, uploadedAt: null, fixesApplied: 0, submissions: [], crossEnrolments: [], loaded: false, error: null }
+const DRAFT_KEY = 'as.inst.draft'
+function readDraft(): UploadRow[] {
+  try {
+    const v = localStorage.getItem(DRAFT_KEY)
+    return v ? (JSON.parse(v) as UploadRow[]) : []
+  } catch {
+    return []
+  }
+}
+function writeDraft(d: UploadRow[]) {
+  try {
+    if (d.length) localStorage.setItem(DRAFT_KEY, JSON.stringify(d))
+    else localStorage.removeItem(DRAFT_KEY)
+  } catch {
+    return
+  }
+}
+
+const empty: Data = { fileName: null, rows: null, uploadedAt: null, fixesApplied: 0, submissions: [], crossEnrolments: [], draft: [], loaded: false, error: null }
 
 // Writes are queued so a fix applied right after an upload never reaches the server before the upload itself.
 let queue: Promise<unknown> = Promise.resolve()
@@ -57,6 +84,7 @@ function enqueue<T>(job: () => Promise<T>): Promise<T> {
 
 export const useInst = create<InstState>((set, get) => ({
   ...empty,
+  draft: readDraft(),
 
   hydrate: async () => {
     try {
@@ -83,11 +111,27 @@ export const useInst = create<InstState>((set, get) => ({
       .catch((e: Error) => set({ error: `Upload was not saved: ${e.message}` }))
   },
 
-  setRows: (rows, fixes) => {
+  setRows: (rows, fixes, note) => {
     set({ rows, fixesApplied: get().fixesApplied + fixes, error: null })
-    enqueue(() => api.put<{ fixesApplied: number; crossEnrolments: OtherEnrolment[] }>('/inst/uploads/current/rows', { rows, fixes }))
+    enqueue(() => api.put<{ fixesApplied: number; crossEnrolments: OtherEnrolment[] }>('/inst/uploads/current/rows', { rows, fixes, note }))
       .then((r) => set({ fixesApplied: r.fixesApplied, crossEnrolments: r.crossEnrolments }))
-      .catch((e: Error) => set({ error: `Fix was not saved: ${e.message}` }))
+      .catch((e: Error) => set({ error: `Change was not saved: ${e.message}` }))
+  },
+
+  saveRow: (row) => {
+    const rows = get().rows ?? []
+    const exists = rows.some((r) => r.rowNo === row.rowNo)
+    const next = exists ? rows.map((r) => (r.rowNo === row.rowNo ? row : r)) : [...rows, row]
+    get().setRows(next, 0, {
+      action: exists ? 'Edited student record' : 'Added student record',
+      detail: `Row ${row.rowNo}, ${row.INST_STUDENT_ID}, ${row.NAME}`,
+    })
+  },
+
+  setDraft: (draft, note) => {
+    if (note) audit('Data', note.action, note.detail)
+    writeDraft(draft)
+    set({ draft })
   },
 
   clearUpload: () => {
@@ -104,14 +148,14 @@ export const useInst = create<InstState>((set, get) => ({
   dismissError: () => set({ error: null }),
 }))
 
-onSignOut(() => useInst.setState(empty))
+onSignOut(() => { writeDraft([]); useInst.setState({ ...empty, draft: [] }) })
 
 /** Instant in-browser preview. The server re-runs the same rules on submit and its result is authoritative. */
 export function useValidation() {
   const rows = useInst((s) => s.rows)
   const crossEnrolments = useInst((s) => s.crossEnrolments)
   return useMemo(
-    () => (rows ? runRules(rows, { ...RULE_CONTEXT, otherEnrolments: crossEnrolments }) : null),
+    () => (rows ? runRules(rows, { ...PREVIEW_CONTEXT, otherEnrolments: crossEnrolments }) : null),
     [rows, crossEnrolments],
   )
 }

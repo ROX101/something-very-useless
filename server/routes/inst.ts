@@ -20,7 +20,8 @@ const Row = z.object({
 }) as unknown as z.ZodType<UploadRow>
 
 const Upload = z.object({ fileName: z.string().min(1).max(255), rows: z.array(Row).min(1).max(MAX_ROWS) })
-const Rows = z.object({ rows: z.array(Row).max(MAX_ROWS), fixes: z.number().int().min(0).max(MAX_ROWS) })
+const Note = z.object({ action: z.string().min(1).max(120), detail: z.string().max(500) })
+const Rows = z.object({ rows: z.array(Row).max(MAX_ROWS), fixes: z.number().int().min(0).max(MAX_ROWS), note: Note.optional() })
 const SubmitBody = z.object({ declaration: z.literal(true) })
 
 const toSubmission = (s: typeof submissions.$inferSelect) => ({
@@ -64,7 +65,10 @@ export function instRoutes() {
     const created = await req.db.transaction(async (tx) => {
       await tx.update(uploads).set({ current: false }).where(and(eq(uploads.institutionPid, pid), eq(uploads.current, true)))
       const [u] = await tx.insert(uploads).values({ institutionPid: pid, fileName: body.fileName, uploadedBy: req.user!.userId, rows: body.rows }).returning()
-      await audit(tx, req.user!, { action: 'upload.create', entity: 'upload', entityId: String(u.id), payload: { fileName: body.fileName, rows: body.rows.length } })
+      await audit(tx, req.user!, {
+        category: 'Data', action: body.fileName.startsWith('Manual entry') ? 'Sent manual entries for validation' : 'Uploaded enrolment file',
+        detail: `${body.fileName}, ${body.rows.length} rows`, entity: 'upload', entityId: String(u.id),
+      })
       return u
     })
     const ctx = await buildContext(req.db, pid, created.rows)
@@ -84,7 +88,12 @@ export function instRoutes() {
     const fixesApplied = u.fixesApplied + body.fixes
     await req.db.transaction(async (tx) => {
       await tx.update(uploads).set({ rows: body.rows, fixesApplied, updatedAt: new Date().toISOString() }).where(eq(uploads.id, u.id))
-      await audit(tx, req.user!, { action: 'upload.fix', entity: 'upload', entityId: String(u.id), payload: { fixes: body.fixes, rows: body.rows.length } })
+      await audit(tx, req.user!, {
+        category: 'Data',
+        action: body.note?.action ?? (body.fixes > 1 ? 'Applied suggested fixes' : 'Fixed a row'),
+        detail: body.note?.detail ?? `${body.fixes} change${body.fixes === 1 ? '' : 's'}, ${body.rows.length} rows now`,
+        entity: 'upload', entityId: String(u.id),
+      })
     })
     res.json({ fixesApplied, crossEnrolments: (await buildContext(req.db, pid, body.rows)).otherEnrolments })
   }))
@@ -95,7 +104,7 @@ export function instRoutes() {
     if (u) {
       await req.db.transaction(async (tx) => {
         await tx.update(uploads).set({ current: false }).where(eq(uploads.id, u.id))
-        await audit(tx, req.user!, { action: 'upload.discard', entity: 'upload', entityId: String(u.id) })
+        await audit(tx, req.user!, { category: 'Data', action: 'Removed uploaded file', detail: u.fileName, entity: 'upload', entityId: String(u.id) })
       })
     }
     res.status(204).end()
@@ -168,7 +177,11 @@ export function instRoutes() {
         }))).onConflictDoNothing()
       }
 
-      await audit(tx, req.user!, { action: 'submission.create', entity: 'submission', entityId: receiptNo, payload: { records: s.records, alerts: s.alerts, hash } })
+      await audit(tx, req.user!, {
+        category: 'Submission', action: 'Submitted enrolment data to AICTE',
+        detail: `Receipt ${receiptNo}, ${s.records} records, ${s.alerts} compliance alerts, SHA-256 ${hash.slice(0, 16)}`,
+        entity: 'submission', entityId: receiptNo,
+      })
       return s
     })
 

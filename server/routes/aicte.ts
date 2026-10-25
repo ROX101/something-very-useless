@@ -1,10 +1,10 @@
 import { Router } from 'express'
-import { and, desc, eq, inArray, sql } from 'drizzle-orm'
+import { and, asc, desc, eq, inArray, sql } from 'drizzle-orm'
 import { z } from 'zod'
 import { insights, kpis } from '../services/insights'
 import type { Db } from '../db/client'
 import { alertActions, auditLog, complianceAlerts, submissions } from '../db/schema'
-import { audit, verifyChain } from '../lib/audit'
+import { audit, toTrail, verifyChain } from '../lib/audit'
 import { requireRole, type SessionUser } from '../lib/auth'
 import { forbidden, handler, notFound, parse } from '../lib/http'
 
@@ -75,7 +75,12 @@ export function aicteRoutes() {
     const at = new Date().toISOString()
     await req.db.transaction(async (tx) => {
       await tx.insert(alertActions).values({ alertId: alert.id, status: body.status, note: body.note, by: req.user!.name, at })
-      await audit(tx, req.user!, { action: 'alert.action', entity: 'alert', entityId: alert.id, payload: { status: body.status, note: body.note } })
+      await audit(tx, req.user!, {
+        category: 'Compliance',
+        action: body.status === 'Referred to Regional Office' ? 'Referred case to Regional Office' : body.status === 'Reviewed, no action' ? 'Closed case, no action' : 'Reopened case',
+        detail: `${alert.id}, ${alert.institution}${body.note ? `: ${body.note}` : ''}`,
+        entity: 'alert', entityId: alert.id,
+      })
     })
     res.status(201).json({ status: body.status, note: body.note, by: req.user!.name, at })
   }))
@@ -103,6 +108,12 @@ export function aicteRoutes() {
     const entity = typeof req.query.entity === 'string' ? req.query.entity : undefined
     const rows = await req.db.select().from(auditLog).where(entity ? eq(auditLog.entity, entity) : undefined).orderBy(desc(auditLog.seq)).limit(limit)
     res.json(rows)
+  }))
+
+  /** The full trail in the Audit Trail page's format, oldest first, so the browser can re-verify the chain. */
+  r.get('/audit/trail', requireRole('aicte_bureau', 'aicte_admin'), handler(async (req, res) => {
+    const rows = await req.db.select().from(auditLog).orderBy(asc(auditLog.seq)).limit(20000)
+    res.json(rows.map(toTrail))
   }))
 
   r.get('/audit/verify', requireRole('aicte_bureau', 'aicte_admin'), handler(async (req, res) => {

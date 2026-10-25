@@ -111,7 +111,7 @@ export default function Certificate() {
             </div>
             <div className="flex flex-col items-center">
               <div className="bg-white p-1.5 ring-1 ring-[#C9A24A]"><QrCode value={forged ? FORGED_JWS : GENUINE_JWS} size={150} label="Signed QR code" /></div>
-              <p className="mt-1 text-[11px] font-semibold text-ink/80">Scan to verify</p>
+              <p className="mt-1 text-[0.75rem] font-semibold text-ink/80">Scan to verify</p>
             </div>
             <div className="flex justify-end gap-8 text-[clamp(10px,1.1vw,13px)] text-ink">
               <div className="text-center"><div className="mb-1 h-8 w-28 border-b border-ink/50" /><p>Registrar</p></div>

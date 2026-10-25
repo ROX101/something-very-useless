@@ -10,3 +10,9 @@ export const RULE_CONTEXT: RuleContext = {
   registry: DATASET.registry,
   otherEnrolments: DATASET.otherEnrolments,
 }
+
+/**
+ * Context for the in-browser preview. Cross-enrolments (R10) are known only to the server, which
+ * returns the relevant ones with the upload; the bundled sample enrolment above is for the engine tests.
+ */
+export const PREVIEW_CONTEXT: RuleContext = { ...RULE_CONTEXT, otherEnrolments: [] }
