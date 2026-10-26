@@ -90,5 +90,11 @@ describe('statutory reports', () => {
     const rr = (await regional.get('/api/aicte/reports/nirf')).body
     expect(rr.rows.every((r: string[]) => ['MH', 'GA'].includes(r[2]))).toBe(true)
     expect((await bureau.get('/api/aicte/reports/xyz')).status).toBe(404)
+
+    // the regional overview loads every officer endpoint scoped to its states
+    for (const path of ['/api/aicte/live', '/api/aicte/submissions', '/api/aicte/kpis', '/api/aicte/insights', '/api/aicte/alerts', '/api/aicte/cases']) {
+      expect((await regional.get(path)).status, path).toBe(200)
+    }
+    expect((await regional.get('/api/aicte/live')).body.submission.receiptNo).toBeTruthy()
   })
 })

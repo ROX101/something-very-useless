@@ -13,7 +13,7 @@ export function AicteLayout({ children }: { children: ReactNode }) {
 
   return (
     <PortalShell
-      context={regional ? `${account!.org}: ${account!.scope}, academic year ${AY}` : `All India, academic year ${AY}`}
+      context={regional ? `${account!.scope}, academic year ${AY}` : `All India, academic year ${AY}`}
       nav={[
         { to: '/aicte', end: true, label: regional ? 'Regional overview' : 'National overview' },
         { to: '/aicte/alerts', label: 'Compliance alerts' },

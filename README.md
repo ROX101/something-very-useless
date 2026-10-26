@@ -13,8 +13,8 @@ npm run dev                     # API on :8080, web on http://localhost:5173 (Vi
 ```
 Tests:
 ```bash
-npm test                        # rules engine, sign-in rules, crypto, watermark (17)
-npm run test:api                # API against Postgres database apaar_sathi_test (25)
+npm test                        # rules engine, sign-in rules, crypto, watermark (18)
+npm run test:api                # API against Postgres database apaar_sathi_test (66)
 ```
 
 ## Architecture
@@ -22,15 +22,17 @@ npm run test:api                # API against Postgres database apaar_sathi_test
 src/      React + Vite frontend
 server/   Express API (TypeScript), bundled with esbuild
   db/       Drizzle schema, SQL migrations, demo seed
-  routes/   auth · inst · aicte · student · verifier · public
-  lib/      JWT session cookie, role guard, hash-chained audit log
+  routes/   auth · inst · aicte · student · verifier · public · university · credentials
+            regulator · onboarding (registrations) · v1 (integration API with API keys)
+  services/ validation · insights · anomalies · credentials · consent · otp · events · reports
+  lib/      JWT session cookie, role guard, hash-chained audit log, API keys, ES256 signing
 ```
 - One service serves both `/api/*` and the built frontend, so there is one URL and no CORS.
 - The rules engine (`src/inst/engine/rules.ts`) is shared: the browser runs it for instant preview, and the server runs it again on submit. The server's result is the official one.
 - Sessions are an httpOnly, Secure, SameSite=Lax cookie holding an HS256 JWT. Roles and the `@aicte-india.org` domain rule are enforced on the server.
 - Every write goes to `audit_log`, where each entry holds the SHA-256 of the previous one. `GET /api/aicte/audit/verify` re-checks the chain.
-- Migrations run on every boot. On the first boot with an empty database (`SEED_ON_BOOT`), the server loads only what the demo logins need: the 7 accounts, the Aranya institution and its programmes, plus stand-ins for the external systems (a mock APAAR registry and one issued degree). There is no activity data: alerts, consent requests, submissions and national figures all start at zero and come from real use.
-- Migration `0001` removes the sample activity data seeded by earlier versions (sample alerts, request RQ-1001, the fake cross-enrolment) from existing databases.
+- Migrations run on every boot. On the first boot with an empty database (`SEED_ON_BOOT`), the server loads only what the demo logins need: the 9 accounts, the Aranya institution and its programmes, plus stand-ins for the external systems (a mock APAAR registry and one issued degree). There is no activity data: alerts, consent requests, submissions and national figures all start at zero and come from real use.
+- Migration `0001` removes the sample activity data seeded by earlier versions (sample alerts, request RQ-1001, the fake cross-enrolment) from existing databases. `0002` moves the audit trail to the hash-chain format. `0003` adds the integration API, credential issuance, probable duplicates, statutory access, OTPs, erasure tracking and in-year events. On boot, existing databases also get any missing demo accounts, the GTU issuer key and the re-signed demo degree.
 
 ## Deploy on Railway
 1. **New Project → Deploy from GitHub repo**, and pick this repository/branch. `railway.json` makes Railway build with the `Dockerfile` and health-check `/api/health`.
@@ -41,6 +43,9 @@ server/   Express API (TypeScript), bundled with esbuild
    | `DATABASE_URL` | `${{Postgres.DATABASE_URL}}` (reference variable; the private network needs no SSL) |
    | `JWT_SECRET` | a long random string: `node -e "console.log(require('crypto').randomBytes(48).toString('base64url'))"` |
    | `NODE_ENV` | `production` |
+   | `SIGNING_KEY_SECRET` | another long random string; encrypts the universities' private signing keys (AES-256-GCM). Keep it stable: changing it makes existing keys unreadable |
+   | `PUBLIC_URL` | the site's https URL, used in certificate QR links and the W3C status-list URL |
+   | `OTP_DEMO` | `true` shows the one-time password on screen (no SMS gateway in this build); set `false` once an SMS provider is connected |
 4. **Settings → Networking → Generate Domain.** Railway sets `PORT` itself.
 5. The first deploy migrates and seeds. Sign in with any demo account below.
 
@@ -49,12 +54,17 @@ To wipe and reseed later, run `npm run db:reset` with `DATABASE_URL` set to the 
 | API | Purpose |
 |---|---|
 | `POST /api/auth/login` · `/logout` · `GET /me` | Session |
+| `POST /api/auth/password` | Change password (required after a one-time password) |
 | `GET /api/inst/state` · `POST /uploads` · `PUT /uploads/current/rows` · `GET /validation` · `POST /submissions` | Institution (submit: nodal officer only) |
-| `GET /api/aicte/alerts` · `/cases` · `/live` · `/kpis` · `/rings` · `POST /alerts/:id/actions` | AICTE (regional officers see only their states) |
-| `GET /api/aicte/audit` · `/audit/verify` | Audit log (bureau, IT cell) |
-| `GET /api/student/requests` · `/log` · `/record` · `POST /requests/:id/decide` · `/revoke` | Student consent |
-| `GET/POST /api/verifier/requests` · `GET /records/:apaar` | Verifier (records need active consent; every read is logged) |
-| `GET /api/public/certificates/:certNo` · `GET /api/health` | Public |
+| `GET /api/inst/students` · `POST /students/events` · `GET /verify/:apaar` · `GET/POST/DELETE /api-keys` | In-year updates, prior-enrolment check, ERP keys |
+| `GET /api/aicte/alerts` · `/cases` · `/live` · `/kpis` · `/insights` · `/rings` · `/reports/:nirf\|aishe\|nba` · `POST /alerts/:id/actions` | AICTE (regional officers see only their states) |
+| `GET /api/aicte/audit` · `/audit/verify` · `/registrations` · `POST /registrations/:ref/decide` | Audit log, onboarding (IT cell) |
+| `GET /api/student/requests` · `/log` · `/record` · `POST /requests/:id/otp` · `/decide` · `/revoke` | Student consent (approval needs the OTP) |
+| `GET/POST /api/verifier/requests` · `GET /records/:apaar` · `POST /requests/:id/erased` | Verifier (records need active consent; every read is logged) |
+| `GET/POST /api/regulator/access` · `GET /access/:id/students[/:apaar]` | Regulator statutory access |
+| `GET /api/university/students` · `/students.csv` · `GET/POST /credentials` · `POST /credentials/:certNo/revoke` | University registrar |
+| `POST /v1/institutions/{pid}/enrolments:batch` · `GET .../enrolments/validation` · `GET /v1/students/{apaar}` · `POST /v1/aicte/approvals` | Integration API (API key, see `/openapi.json`) |
+| `GET /api/public/issuers` · `/c/:certNo` · `/certificates/:certNo` · `/status/:issuer` · `POST /registrations` · `GET /api/health` | Public |
 
 ## Sign-in and registration
 One sign-in page (`/`). The account decides the role and the portal (no role picker).
@@ -65,12 +75,16 @@ Fields are checked when you leave them; wrong user ID, wrong password and non-AI
 | User ID | Role | Lands on |
 |---|---|---|
 | meena.iyer@aicte-india.org | Regulation Bureau Officer | /aicte |
-| rahul.kulkarni@aicte-india.org | Regional Officer (Western) | /aicte/region |
+| rahul.kulkarni@aicte-india.org | Regional Officer (Western) | /aicte (Maharashtra and Goa only) |
 | sysadmin@aicte-india.org | AICTE Administrator | /aicte/admin |
 | nodal@aranya-tech.edu.in | Institution Admin (nodal officer) | /inst |
 | operator@aranya-tech.edu.in | Data Operator | /inst |
 | 4471 2093 6618 (APAAR ID) | Student | /student |
 | kabir.menon@tarangsoftware.in | Registered Verifier | /verify |
+| registrar@godavaritu.edu.in | University Registrar (GTU) | /university |
+| assessor@naac.gov.in | Regulator (NAAC) | /regulator |
+
+Registrations are approved by the AICTE Administrator at `/aicte/admin/registrations`. Approval creates the account (students only when the APAAR ID is in the registry) with a one-time password, which the applicant must replace at first sign-in.
 
 Rules (enforced by the API, `server/routes/auth.ts`):
 - AICTE roles only for `@aicte-india.org` accounts, and those accounts only get AICTE roles.
@@ -86,6 +100,11 @@ Sign in as `nodal@aranya-tech.edu.in` (or `operator@…`, who cannot submit).
 | Upload & validate | /inst/upload (drop `public/Aranya_AY2026-27_FirstYear.xlsx`) |
 | Seat ledger | /inst/ledger |
 | Submit to AICTE | /inst/submit |
+| In-year updates | /inst/students (withdrawal, transfer out, name correction, lateral entry, reinstatement) |
+| APAAR check | /inst/check (before admission: APAAR ID real, name and DOB match, not still active elsewhere) |
+| ERP / API access | Dashboard → API access (keys for the integration API) |
+
+In-year changes update the national register at once (a withdrawn student no longer triggers R10 elsewhere), are logged in the student's access log, and are replayed when the institution resubmits, so a revised Excel file cannot undo them.
 
 On a fresh database the sample file gives 509 rows → 482 clean / 17 need action / 10 auto-cleared; after the 12 suggested fixes → 507 records and 2 compliance alerts (R06, R07). R10 (cross-enrolment) fires only once another institution has submitted the same APAAR ID. The server and the browser preview must agree; `npm run test:api` checks this.
 
@@ -104,9 +123,11 @@ Sign in as `meena.iyer@aicte-india.org`.
 | National overview | /aicte | Institutions in scope, returns submitted, records received, APAAR-linked %, open alerts, cross-institution duplicates, state tile map, deadline. All computed from submitted data, starting at zero |
 | Compliance alerts | /aicte/alerts | Every alert with its rows; the college's live submission appears at the top. Review a case, then Refer to Regional Office or Close with no action (reason required) |
 | Duplicate rings | /aicte/rings | Students enrolled at two institutions at once (from submitted enrolments), the institution's risk score with the alerts behind it, the masked list of records, watch-list |
-| Reports | /aicte/reports | Report builder with preview; Export PDF (print to PDF), Export Excel, API |
+| Reports | /aicte/reports | Submission and APAAR coverage by state, excess-admission register, and server-built NIRF (intake, student strength by gender, outside country, EWS, SC+ST+OBC, TFW, PM-USPY), AISHE (gender × category, foreign) and NBA SAR enrolment ratio ER = (N1 + N4) / N. Export PDF, Excel |
 
-Regional Officer accounts open a placeholder page (the API already limits them to their states).
+Regional officers see the same pages, limited on the server to their states.
+
+Duplicate detection: R10 flags the same APAAR ID active at two institutions; R11 flags probable duplicates (same date of birth, Jaro-Winkler name similarity ≥ 0.92, gender not conflicting, APAAR IDs different or missing). The watch-list adds statistical anomalies per institution (modified z-score against peers, ≥ 3.5; fixed thresholds when fewer than 5 peers): intake growth, last-week admissions, missing APAAR IDs, supernumerary share, revisions.
 
 ## Audit trail
 Sign in as `sysadmin@aicte-india.org` (AICTE Administrator) to open `/aicte/admin`.
@@ -117,6 +138,15 @@ Sign in as `sysadmin@aicte-india.org` (AICTE Administrator) to open `/aicte/admi
 - Click an event to see its full hash and the previous event's hash.
 - Filter by date, category, user or text, page through 25 events at a time, and export to Excel.
 `npm run sample` regenerates the sample Excel file (deterministic).
+
+## Stakeholder verification
+| Who | How they verify | Safeguard |
+|---|---|---|
+| Anyone with the certificate | Scan the QR (`/c/<certNo>`) | Public summary only (no marks); W3C status list shows revocation |
+| Employer, university admissions (verifier) | Consent request → student approves with OTP | Fields limited to what was asked; erase-by date from first view; erasure confirmed and shown to the student |
+| Admitting institution | `/inst/check` | Logged in the student's access log; DOB only as match / no match |
+| NAAC, NBA, NIRF, UGC (regulator) | `/regulator`: open access to one institution with a legal basis and reference, up to 30 days | Each student is told who looked and why; every view in the audit trail |
+| Universities | `/university`: issue and revoke signed degrees (W3C VC, ES256) with the APAAR ID | Name checked against the APAAR registry; Aadhaar never printed |
 
 ## Student and verifier
 | Account | Pages |
@@ -130,7 +160,7 @@ The QR holds a compact JWS signed with ES256 (ECDSA P-256). Only the public key 
 Consent is stored on the server, so the student (phone) and the verifier (laptop) can be on different devices.
 
 Consent requests carry a purpose (pre-employment verification, appointment or promotion, admission, education loan or scholarship, professional registration), a reference number for that purpose (offer letter, application number), how long access lasts (7, 15 or 30 days) and how long the verifier keeps the data (30, 90 or 180 days).
-The student allows with an OTP (consent number such as `CN-7731`), refuses, or revokes later. The verifier sees name, degree, year and award status only while consent is active; marks, category, address and date of birth are never shared. Every view is written to the student's access log.
+The student allows with a one-time password sent to the registered mobile (hashed on the server, valid 5 minutes, 5 tries; shown on screen while `OTP_DEMO=true`), refuses, or revokes later. The verifier sees name, degree, year and award status only while consent is active; marks, category, address and date of birth are never shared. Every view is written to the student's access log.
 
 ## Hidden watermark (steganography)
 "Download digital copy" on the certificate page saves a PNG with an invisible watermark in its pixels:

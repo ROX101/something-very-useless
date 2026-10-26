@@ -8,6 +8,7 @@ interface Grant { id: string; institutionPid: string; institution?: string; city
 interface Student { apaar: string | null; instStudentId: string | null; name: string | null; programme: string; ay: string; gender: string | null; category: string | null; quota: string | null; status: string }
 interface Detail { apaar: string; enrolments: { ay: string; programme: string; name: string | null; dob: string | null; gender: string | null; category: string | null; quota: string | null; status: string; receipt: string }[]; credentials: { certNo: string; degree: string | null; year: number | null; cgpa: string | null; division: string | null; revoked: boolean }[] }
 
+const STATUS: Record<string, string> = { active: 'Studying', withdrawn: 'Withdrawn', transferred: 'Transferred out' }
 const input = 'h-11 w-full rounded border border-line bg-white px-3 text-[0.9375rem] focus:outline-none focus:ring-2 focus:ring-navy/30'
 
 /**
@@ -128,7 +129,7 @@ export default function Access() {
                       </td>
                       <td className={td}>{s.programme}</td>
                       <td className={td}>{s.quota}</td>
-                      <td className={td}>{s.status}</td>
+                      <td className={td}>{STATUS[s.status] ?? s.status}</td>
                     </tr>
                   ))}
                 </tbody>
@@ -138,7 +139,7 @@ export default function Access() {
             {detail && (
               <div className="border-t border-line px-5 py-4 text-sm">
                 <p className="font-semibold">Full record, APAAR {formatApaar(detail.apaar)}</p>
-                {detail.enrolments.map((e, i) => <p key={i} className="mt-1">{e.ay}: {e.programme}, {e.quota}, {e.category}, born {e.dob ?? 'not stated'}, {e.status} (receipt {e.receipt})</p>)}
+                {detail.enrolments.map((e, i) => <p key={i} className="mt-1">{e.ay}: {e.programme}, {e.quota}, {e.category}, born {e.dob ?? 'not stated'}, {STATUS[e.status] ?? e.status} (receipt {e.receipt})</p>)}
                 {detail.credentials.map((c) => <p key={c.certNo} className="mt-1">Degree {c.certNo}: {c.degree}, {c.year}, CGPA {c.cgpa ?? 'n/a'}{c.revoked ? ', revoked' : ''}</p>)}
                 {!detail.credentials.length && <p className="mt-1 text-muted">No degree issued yet.</p>}
               </div>

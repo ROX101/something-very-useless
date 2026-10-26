@@ -40,7 +40,7 @@ async function latestCases(db: Db) {
 
 async function latestLive(db: Db, states: string[] | null) {
   const [s] = await db.select().from(submissions)
-    .where(states ? sql`${submissions.institutionPid} in (select pid from institutions where state in ${states.length ? states : ["__"]}))` : undefined)
+    .where(states ? sql`${submissions.institutionPid} in (select pid from institutions where state in ${states.length ? states : ["__"]})` : undefined)
     .orderBy(desc(submissions.submittedAt)).limit(1)
   if (!s) return null
   const alerts = (await listAlerts(db, states)).filter((a) => a.receiptNo === s.receiptNo)
@@ -155,7 +155,7 @@ export function aicteRoutes() {
   r.get('/submissions', officers, handler(async (req, res) => {
     const states = stateFilter(req.user!)
     const rows = await req.db.select().from(submissions)
-      .where(states ? and(sql`${submissions.institutionPid} in (select pid from institutions where state in ${states.length ? states : ["__"]}))`) : undefined)
+      .where(states ? sql`${submissions.institutionPid} in (select pid from institutions where state in ${states.length ? states : ["__"]})` : undefined)
       .orderBy(desc(submissions.submittedAt)).limit(200)
     res.json(rows.map(({ snapshot: _s, ...s }) => s))
   }))

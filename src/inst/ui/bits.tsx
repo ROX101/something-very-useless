@@ -109,6 +109,8 @@ export function daysUntil(isoDate: string) {
 }
 
 export function formatDate(iso: string) {
+  // A calendar date (an effective date, a date of birth) has no time of day to show.
+  if (/^\d{4}-\d{2}-\d{2}$/.test(iso)) return new Date(`${iso}T12:00:00+05:30`).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric', timeZone: 'Asia/Kolkata' })
   return new Date(iso).toLocaleString('en-IN', { day: 'numeric', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit', timeZone: 'Asia/Kolkata' })
 }
 
