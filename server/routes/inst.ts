@@ -48,12 +48,15 @@ export function instRoutes() {
       currentUpload(req.db, pid),
       req.db.select().from(submissions).where(eq(submissions.institutionPid, pid)).orderBy(desc(submissions.submittedAt)),
     ])
-    const crossEnrolments = upload ? (await buildContext(req.db, pid, upload.rows)).otherEnrolments : []
+    const ctx = upload ? await buildContext(req.db, pid, upload.rows) : null
+    const crossEnrolments = ctx?.otherEnrolments ?? []
+    const probable = ctx?.probable ?? []
     res.json({
       institution: inst,
       programmes: progs,
       upload: upload && { id: upload.id, fileName: upload.fileName, rows: upload.rows, uploadedAt: upload.uploadedAt, fixesApplied: upload.fixesApplied },
       crossEnrolments,
+      probable,
       submissions: subs.map(toSubmission),
     })
   }))
@@ -67,6 +70,7 @@ export function instRoutes() {
     res.status(201).json({
       upload: { id: created.id, fileName: created.fileName, uploadedAt: created.uploadedAt, fixesApplied: 0 },
       crossEnrolments: ctx.otherEnrolments,
+      probable: ctx.probable,
       result,
     })
   }))
@@ -86,7 +90,8 @@ export function instRoutes() {
         entity: 'upload', entityId: String(u.id),
       })
     })
-    res.json({ fixesApplied, crossEnrolments: (await buildContext(req.db, pid, body.rows)).otherEnrolments })
+    const ctx = await buildContext(req.db, pid, body.rows)
+    res.json({ fixesApplied, crossEnrolments: ctx.otherEnrolments, probable: ctx.probable })
   }))
 
   r.delete('/uploads/current', handler(async (req, res) => {
@@ -160,7 +165,8 @@ export function instRoutes() {
         records: result.counts.total, alerts: result.alerts.length, hash,
         snapshot: {
           counts: result.counts, excess, alerts: result.alerts,
-          rows: u.rows.map(({ rowNo, NAME, INST_STUDENT_ID, PROGRAMME, APAAR_ID }) => ({ rowNo, NAME, INST_STUDENT_ID, PROGRAMME, APAAR_ID })),
+          rows: u.rows.map(({ rowNo, NAME, INST_STUDENT_ID, PROGRAMME, APAAR_ID, DOB, GENDER, CATEGORY, QUOTA, NRI, OCI, FN, NATIONALITY, ADMISSION_DATE, APAAR_EXCEPTION }) =>
+            ({ rowNo, NAME, INST_STUDENT_ID, PROGRAMME, APAAR_ID, DOB, GENDER, CATEGORY, QUOTA, NRI, OCI, FN, NATIONALITY, ADMISSION_DATE, APAAR_EXCEPTION })),
         },
       }).returning()
 

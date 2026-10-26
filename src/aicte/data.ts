@@ -52,11 +52,12 @@ export interface WatchItem {
   state: string
   risk: number
   reason: string
-  factors: { label: string; points: number; clause: string; alertId: string }[]
+  factors: { label: string; points: number; clause: string; alertId: string; kind: 'alert' | 'anomaly' }[]
 }
 
 export interface RingInstitution { pid: string; name: string; city: string; state: string }
-export interface Ring { from: RingInstitution; to: RingInstitution; students: { apaar: string; name: string | null }[] }
+export interface ProbablePair { a: { name: string; apaar: string | null; instStudentId: string | null }; b: { name: string; apaar: string | null; instStudentId: string | null }; similarity: number }
+export interface Ring { from: RingInstitution; to: RingInstitution; students: { apaar: string; name: string | null }[]; probable: ProbablePair[] }
 
 export interface Insights {
   states: import('./states').StateStat[]

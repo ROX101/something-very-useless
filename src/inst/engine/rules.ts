@@ -7,6 +7,7 @@ import {
   type Flag,
   type LedgerLine,
   type OtherEnrolment,
+  type ProbableMatch,
   type Programme,
   type RegistryEntry,
   type RowResult,
@@ -20,7 +21,12 @@ export interface RuleContext {
   programmes: Programme[]
   registry: RegistryEntry[]
   otherEnrolments: OtherEnrolment[]
+  /** Students elsewhere with the same DOB, for R11. Optional: without it R11 does not run. */
+  probable?: ProbableMatch[]
 }
+
+/** Names at least this similar (Jaro-Winkler on normalised names) with the same DOB count as a probable duplicate. */
+export const PROBABLE_NAME_SIMILARITY = 0.92
 
 export const RULE_INFO: Record<RuleCode, { title: string; clause?: string; gate: number }> = {
   R01: { title: 'Duplicate row', gate: 2 },
@@ -36,6 +42,7 @@ export const RULE_INFO: Record<RuleCode, { title: string; clause?: string; gate:
   R08: { title: 'Foreign National status vs nationality', gate: 4 },
   R09: { title: 'OCI status without OCI card number', gate: 4 },
   R10: { title: 'Enrolled at another institution', gate: 5 },
+  R11: { title: 'Probable duplicate at another institution', gate: 5 },
 }
 
 export const GATES = ['Format', 'APAAR', 'Duplicates', 'Quota', 'Consistency', 'Cross-institution'] as const
@@ -59,6 +66,9 @@ export function runRules(rows: UploadRow[], ctx: RuleContext): ValidationResult 
   const registry = new Map(ctx.registry.map((e) => [e.apaar, e]))
   const byNameDob = new Map(ctx.registry.map((e) => [`${normaliseName(e.name)}|${e.dob}`, e]))
   const elsewhere = new Map(ctx.otherEnrolments.map((e) => [e.apaar, e]))
+  const byDob = new Map<string, ProbableMatch[]>()
+  for (const m of ctx.probable ?? []) byDob.set(m.dob, [...(byDob.get(m.dob) ?? []), m])
+  const probableHits = new Map<string, { m: ProbableMatch; rowNos: number[] }>()
 
   const flags = new Map<number, Flag[]>()
   const add = (r: UploadRow, f: Flag) => {
@@ -129,6 +139,24 @@ export function runRules(rows: UploadRow[], ctx: RuleContext): ValidationResult 
       }
     }
 
+    // R11: same person, different (or no) APAAR ID, at another institution. R10 already covers the same APAAR ID.
+    const ownApaar = raw.replace(/\s/g, '')
+    for (const m of byDob.get(r.DOB) ?? []) {
+      if (m.pid === ctx.institutionPid || (m.apaar && m.apaar === ownApaar)) continue
+      if (m.gender && r.GENDER && m.gender !== r.GENDER) continue
+      const sim = nameSimilarity(r.NAME, m.name)
+      if (sim < PROBABLE_NAME_SIMILARITY) continue
+      const id = `R11-${m.pid}`
+      add(r, {
+        rule: 'R11', kind: 'alert', field: 'NAME', alertId: id,
+        message: `Same DOB and name ${sim >= 0.999 ? 'match' : `≈ ${m.name} (${sim.toFixed(2)})`} at ${m.institution}, ${m.city}${m.apaar ? `, under a different APAAR ID` : ', without an APAAR ID'}`,
+      })
+      const hit = probableHits.get(id) ?? { m, rowNos: [] }
+      if (!hit.rowNos.includes(r.rowNo)) hit.rowNos.push(r.rowNo)
+      probableHits.set(id, hit)
+      break
+    }
+
     if (r.QUOTA === 'NRI-CONVERTED' && r.NRI === 'N') {
       add(r, { rule: 'R05a', kind: 'auto', field: 'QUOTA', message: 'Vacant NRI seat filled by a general merit candidate, counts within intake' })
     }
@@ -142,6 +170,15 @@ export function runRules(rows: UploadRow[], ctx: RuleContext): ValidationResult 
         fix: indian ? { label: 'Set OCI to N (nationality is Indian)', changes: { OCI: 'N' } } : undefined,
       })
     }
+  }
+
+  for (const [id, { m, rowNos }] of probableHits) {
+    alerts.push({
+      id, rule: 'R11', clause: '',
+      title: `${rowNos.length} probable duplicate${rowNos.length > 1 ? 's' : ''} with ${m.institution}, ${m.city}`,
+      detail: 'Same date of birth and name, different or missing APAAR ID',
+      rowNos,
+    })
   }
 
   const ledger: LedgerLine[] = []

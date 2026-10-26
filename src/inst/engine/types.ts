@@ -46,9 +46,22 @@ export interface OtherEnrolment {
   ay: string
 }
 
+/** A student at another institution who may be the same person (same DOB, very similar name, different or no APAAR ID). */
+export interface ProbableMatch {
+  name: string
+  dob: string
+  gender: string | null
+  apaar: string | null
+  instStudentId: string | null
+  pid: string
+  institution: string
+  city: string
+  ay: string
+}
+
 export type RuleCode =
   | 'R01' | 'R02' | 'R03' | 'R03a' | 'R04' | 'R04a'
-  | 'R05' | 'R05a' | 'R06' | 'R07' | 'R08' | 'R09' | 'R10'
+  | 'R05' | 'R05a' | 'R06' | 'R07' | 'R08' | 'R09' | 'R10' | 'R11'
 
 export type FlagKind = 'error' | 'alert' | 'auto'
 

@@ -1,6 +1,6 @@
 import { create } from 'zustand'
 import { useMemo } from 'react'
-import type { OtherEnrolment, UploadRow } from './engine/types'
+import type { OtherEnrolment, ProbableMatch, UploadRow } from './engine/types'
 import { runRules } from './engine/rules'
 import { PREVIEW_CONTEXT } from './data/dataset'
 import { api } from '../api'
@@ -20,6 +20,7 @@ export interface Submission {
 
 interface ServerState {
   crossEnrolments: OtherEnrolment[]
+  probable: ProbableMatch[]
   upload: { id: number; fileName: string; rows: UploadRow[]; uploadedAt: string; fixesApplied: number } | null
   submissions: Submission[]
 }
@@ -35,6 +36,8 @@ interface Data {
   submissions: Submission[]
   /** Students in this upload who are enrolled at another institution, as known to the server (R10). */
   crossEnrolments: OtherEnrolment[]
+  /** Students elsewhere who may be the same person (R11), as known to the server. */
+  probable: ProbableMatch[]
   /** Manual entries not yet sent for validation. Kept in this browser only, like an unsaved form. */
   draft: UploadRow[]
   loaded: boolean
@@ -72,7 +75,7 @@ function writeDraft(d: UploadRow[]) {
   }
 }
 
-const empty: Data = { fileName: null, rows: null, uploadedAt: null, fixesApplied: 0, submissions: [], crossEnrolments: [], draft: [], loaded: false, error: null }
+const empty: Data = { fileName: null, rows: null, uploadedAt: null, fixesApplied: 0, submissions: [], crossEnrolments: [], probable: [], draft: [], loaded: false, error: null }
 
 // Writes are queued so a fix applied right after an upload never reaches the server before the upload itself.
 let queue: Promise<unknown> = Promise.resolve()
@@ -97,6 +100,7 @@ export const useInst = create<InstState>((set, get) => ({
         fixesApplied: s.upload?.fixesApplied ?? 0,
         submissions: s.submissions,
         crossEnrolments: s.crossEnrolments,
+        probable: s.probable ?? [],
         loaded: true,
       })
     } catch (e) {
@@ -105,16 +109,16 @@ export const useInst = create<InstState>((set, get) => ({
   },
 
   setUpload: (fileName, rows) => {
-    set({ fileName, rows, uploadedAt: new Date().toISOString(), fixesApplied: 0, crossEnrolments: [], error: null })
-    enqueue(() => api.post<{ upload: { uploadedAt: string }; crossEnrolments: OtherEnrolment[] }>('/inst/uploads', { fileName, rows }))
-      .then((r) => set({ uploadedAt: r.upload.uploadedAt, crossEnrolments: r.crossEnrolments }))
+    set({ fileName, rows, uploadedAt: new Date().toISOString(), fixesApplied: 0, crossEnrolments: [], probable: [], error: null })
+    enqueue(() => api.post<{ upload: { uploadedAt: string }; crossEnrolments: OtherEnrolment[]; probable: ProbableMatch[] }>('/inst/uploads', { fileName, rows }))
+      .then((r) => set({ uploadedAt: r.upload.uploadedAt, crossEnrolments: r.crossEnrolments, probable: r.probable }))
       .catch((e: Error) => set({ error: `Upload was not saved: ${e.message}` }))
   },
 
   setRows: (rows, fixes, note) => {
     set({ rows, fixesApplied: get().fixesApplied + fixes, error: null })
-    enqueue(() => api.put<{ fixesApplied: number; crossEnrolments: OtherEnrolment[] }>('/inst/uploads/current/rows', { rows, fixes, note }))
-      .then((r) => set({ fixesApplied: r.fixesApplied, crossEnrolments: r.crossEnrolments }))
+    enqueue(() => api.put<{ fixesApplied: number; crossEnrolments: OtherEnrolment[]; probable: ProbableMatch[] }>('/inst/uploads/current/rows', { rows, fixes, note }))
+      .then((r) => set({ fixesApplied: r.fixesApplied, crossEnrolments: r.crossEnrolments, probable: r.probable }))
       .catch((e: Error) => set({ error: `Change was not saved: ${e.message}` }))
   },
 
@@ -135,7 +139,7 @@ export const useInst = create<InstState>((set, get) => ({
   },
 
   clearUpload: () => {
-    set({ fileName: null, rows: null, uploadedAt: null, fixesApplied: 0, crossEnrolments: [], error: null })
+    set({ fileName: null, rows: null, uploadedAt: null, fixesApplied: 0, crossEnrolments: [], probable: [], error: null })
     enqueue(() => api.del('/inst/uploads/current')).catch((e: Error) => set({ error: e.message }))
   },
 
@@ -154,9 +158,10 @@ onSignOut(() => { writeDraft([]); useInst.setState({ ...empty, draft: [] }) })
 export function useValidation() {
   const rows = useInst((s) => s.rows)
   const crossEnrolments = useInst((s) => s.crossEnrolments)
+  const probable = useInst((s) => s.probable)
   return useMemo(
-    () => (rows ? runRules(rows, { ...PREVIEW_CONTEXT, otherEnrolments: crossEnrolments }) : null),
-    [rows, crossEnrolments],
+    () => (rows ? runRules(rows, { ...PREVIEW_CONTEXT, otherEnrolments: crossEnrolments, probable }) : null),
+    [rows, crossEnrolments, probable],
   )
 }
 

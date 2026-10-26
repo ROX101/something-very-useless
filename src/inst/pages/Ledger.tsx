@@ -26,7 +26,7 @@ export default function Ledger() {
   const totalIntake = result.ledger.reduce((n, l) => n + l.programme.intake, 0)
   const totalSuper = result.ledger.reduce((n, l) => n + l.buckets.reduce((m, b) => m + b.used, 0), 0)
   const totalExcess = result.ledger.reduce((n, l) => n + l.excess, 0)
-  const crossAlerts = result.alerts.filter((a) => a.rule === 'R10')
+  const crossAlerts = result.alerts.filter((a) => a.rule === 'R10' || a.rule === 'R11')
   const rowsByNo = new Map(result.rows.map((r) => [r.row.rowNo, r.row]))
 
   return (
@@ -130,7 +130,7 @@ export default function Ledger() {
           return (
             <div key={a.id} className="border-l-4 border-warn bg-white px-5 py-4">
               <p className="flex items-center gap-2 font-semibold text-warn"><LockIcon /> {a.title}</p>
-              <p className="mt-1 text-[0.9375rem] text-ink">{a.detail}{row && <>, APAAR <span className="whitespace-nowrap font-mono">{maskApaar(row.APAAR_ID)}</span>, {row.NAME}</>}</p>
+              <p className="mt-1 text-[0.9375rem] text-ink">{a.detail}{row && a.rule === 'R10' && <>, APAAR <span className="whitespace-nowrap font-mono">{maskApaar(row.APAAR_ID)}</span>, {row.NAME}</>}{a.rule === 'R11' && <>: {a.rowNos.map((n) => rowsByNo.get(n)?.NAME).filter(Boolean).join(', ')}</>}</p>
               <p className="mt-1 text-sm text-muted">Cross-institution check against the AICTE central repository</p>
             </div>
           )

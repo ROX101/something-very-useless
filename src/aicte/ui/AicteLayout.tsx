@@ -30,4 +30,5 @@ export const RULE_NAME: Record<string, string> = {
   R06: 'Excess admission',
   R07: 'Supernumerary cap exceeded',
   R10: 'Enrolled at another institution',
+  R11: 'Probable duplicate at another institution',
 }

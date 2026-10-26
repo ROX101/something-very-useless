@@ -6,7 +6,7 @@ import { CaseDrawer, StatusText } from './Alerts'
 import { statusOf, useAllAlerts, useCases, useInsights } from '../store'
 
 interface Node extends RingInstitution { x: number; y: number; r: number; students: number }
-interface Edge { from: string; to: string; students: number }
+interface Edge { from: string; to: string; students: number; probable: number }
 
 const MAX_POINTS = 30
 
@@ -14,8 +14,9 @@ const MAX_POINTS = 30
 function focusRing(rings: Ring[]) {
   const count = new Map<string, number>()
   for (const r of rings) {
-    count.set(r.from.pid, (count.get(r.from.pid) ?? 0) + r.students.length)
-    count.set(r.to.pid, (count.get(r.to.pid) ?? 0) + r.students.length)
+    const n = r.students.length + r.probable.length
+    count.set(r.from.pid, (count.get(r.from.pid) ?? 0) + n)
+    count.set(r.to.pid, (count.get(r.to.pid) ?? 0) + n)
   }
   const focusPid = [...count.entries()].sort((a, b) => b[1] - a[1])[0]?.[0]
   if (!focusPid) return null
@@ -32,9 +33,14 @@ function focusRing(rings: Ring[]) {
     const angle = Math.PI + (2 * Math.PI * i) / partners.length
     nodes.push({ ...p.inst, x: cx + Math.cos(angle) * 270, y: cy + Math.sin(angle) * 160, r: 24 + Math.min(14, p.ring.students.length), students: p.ring.students.length })
   })
-  const edges: Edge[] = partners.map((p) => ({ from: focus.pid, to: p.inst.pid, students: p.ring.students.length }))
+  const edges: Edge[] = partners.map((p) => ({ from: focus.pid, to: p.inst.pid, students: p.ring.students.length, probable: p.ring.probable.length }))
   const rows = partners.flatMap((p) => p.ring.students.map((s) => ({ ...s, with: `${p.inst.name}, ${p.inst.city}` })))
-  return { focus, nodes, edges, rows, total }
+  const probable = partners.flatMap((p) => p.ring.probable.map((x) => {
+    const mine = p.ring.from.pid === focus.pid ? x.a : x.b
+    const theirs = p.ring.from.pid === focus.pid ? x.b : x.a
+    return { mine, theirs, similarity: x.similarity, with: `${p.inst.name}, ${p.inst.city}` }
+  }))
+  return { focus, nodes, edges, rows, total, probable }
 }
 
 export default function Rings() {
@@ -65,10 +71,11 @@ export default function Rings() {
       <PageTitle title="Duplicate rings" sub={`Students with an active enrolment at more than one institution in AY ${AY}`} />
 
       <div className="grid gap-6 lg:grid-cols-[1.6fr_1fr]">
-        <Panel className="min-w-0" title={<span><span className="tnum">{view.total}</span> student{view.total === 1 ? '' : 's'} enrolled at two institutions at once</span>}>
+        <Panel className="min-w-0" title={<span><span className="tnum">{view.total}</span> student{view.total === 1 ? '' : 's'} enrolled at two institutions at once{view.probable.length ? `, ${view.probable.length} probable` : ''}</span>}>
           <RingGraph nodes={view.nodes} edges={view.edges} focusPid={view.focus.pid} score={risk?.risk} />
           <div className="mt-3 flex flex-wrap gap-x-6 gap-y-2 text-sm text-muted">
             <span className="flex items-center gap-2"><span className="h-0.5 w-6 bg-err" />Same APAAR ID at both institutions</span>
+            {view.probable.length > 0 && <span className="flex items-center gap-2"><span className="w-6 border-t-2 border-dashed border-saffron" />{view.probable.length} probable duplicate{view.probable.length === 1 ? '' : 's'}: same DOB and name, different or no APAAR ID</span>}
           </div>
         </Panel>
 
@@ -81,7 +88,7 @@ export default function Rings() {
               {risk.factors.map((f, i) => (
                 <li key={f.alertId} className="animate-[fadeIn_.4s_ease-out_both]" style={{ animationDelay: `${300 + i * 120}ms` }}>
                   <div className="flex justify-between gap-3 text-sm">
-                    <span className="text-ink">{f.label}{f.clause && <span className="ml-1"><Clause clause={f.clause} /></span>}</span>
+                    <span className="text-ink">{f.kind === 'anomaly' && <span className="mr-1 rounded bg-page px-1.5 py-0.5 text-xs font-semibold text-muted">Statistical</span>}{f.label}{f.clause && <span className="ml-1"><Clause clause={f.clause} /></span>}</span>
                     <span className="font-semibold tnum">+{f.points}</span>
                   </div>
                   <div className="mt-1.5 h-2 rounded bg-page">
@@ -91,7 +98,7 @@ export default function Rings() {
               ))}
             </ul>
           ) : <p className="mt-5 text-sm text-muted">No open compliance alerts for this institution.</p>}
-          <p className="mt-5 text-sm text-muted">Each open alert adds points by rule: cross-enrolment 30, excess admission 25, supernumerary cap 15, NRI cap 10. Capped at 100.</p>
+          <p className="mt-5 text-sm text-muted">Each open alert adds points by rule: cross-enrolment 30, excess admission 25, probable duplicate 20, supernumerary cap 15, NRI cap 10. A statistical anomaly (far from peer institutions, modified z-score 3.5 or more) adds 12 to 18. Capped at 100.</p>
           <div className="mt-5 flex flex-wrap items-center gap-3 border-t border-line pt-4">
             {alert && <button className={btn.primary} onClick={() => setCaseOpen(true)}>Refer to Regional Office</button>}
             <button className={btn.secondary} onClick={() => setShowRows((v) => !v)}>{showRows ? 'Hide' : 'View'} {view.total} record{view.total === 1 ? '' : 's'}</button>
@@ -117,6 +124,26 @@ export default function Rings() {
               </tbody>
             </table>
           </div>
+        </Panel>
+      )}
+
+      {view.probable.length > 0 && (
+        <Panel title={`Probable duplicates involving ${view.focus.name}`} className="mt-6" flush>
+          <div className="overflow-x-auto">
+            <table className="w-full text-[0.9375rem]">
+              <thead className="border-b border-line bg-page/60"><tr><th className={th}>Here</th><th className={th}>Also at</th><th className={th}>Name match</th></tr></thead>
+              <tbody className="divide-y divide-line">
+                {view.probable.map((p, i) => (
+                  <tr key={i}>
+                    <td className={td}><p className="font-medium">{p.mine.name}</p><p className="font-mono text-sm text-muted">{p.mine.apaar ? maskApaar(p.mine.apaar) : 'No APAAR ID'}{p.mine.instStudentId ? `, ${p.mine.instStudentId}` : ''}</p></td>
+                    <td className={td}><p className="font-medium">{p.theirs.name}</p><p className="text-sm text-muted">{p.with}, {p.theirs.apaar ? maskApaar(p.theirs.apaar) : 'no APAAR ID'}</p></td>
+                    <td className={`${td} tnum`}>{Math.round(p.similarity * 100)}%, same date of birth</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+          <p className="border-t border-line px-5 py-3 text-sm text-muted">Probable, not confirmed: a field check or the APAAR registry decides whether these are the same person.</p>
         </Panel>
       )}
 
@@ -178,18 +205,20 @@ function RingGraph({ nodes, edges, focusPid, score }: { nodes: Node[]; edges: Ed
         const active = hover === null || hover === e.from || hover === e.to
         return (
           <g key={`${e.from}${e.to}`} opacity={active ? 1 : 0.25} className="transition-opacity">
-            <path d={`M${a.x} ${a.y} L${b.x} ${b.y}`} stroke="#B42318" strokeWidth="2" pathLength={1}
-              strokeDasharray="1" className="animate-[draw_1.2s_ease-out_both]" style={{ animationDelay: `${ei * 200}ms` }} />
+            {e.students > 0 && <path d={`M${a.x} ${a.y} L${b.x} ${b.y}`} stroke="#B42318" strokeWidth="2" pathLength={1}
+              strokeDasharray="1" className="animate-[draw_1.2s_ease-out_both]" style={{ animationDelay: `${ei * 200}ms` }} />}
+            {e.probable > 0 && <path d={`M${a.x} ${a.y} Q${mx + nx * 52} ${my + ny * 52} ${b.x} ${b.y}`} fill="none" stroke="#E07B1A" strokeWidth="2" strokeDasharray="6 5"
+              className="animate-[fadeIn_.5s_ease-out_both]" style={{ animationDelay: '1s' }}><title>{e.probable} probable duplicate{e.probable === 1 ? '' : 's'}</title></path>}
             {dots.map((d, i) => (
               <circle key={i} cx={d.x} cy={d.y} r="4" fill="#B42318" stroke="#FFFFFF" strokeWidth="1.5"
                 className="animate-[fadeIn_.3s_ease-out_both]" style={{ animationDelay: `${300 + ei * 200 + i * 30}ms` }}>
                 <title>Student {i + 1}, shared APAAR ID</title>
               </circle>
             ))}
-            <g transform={`translate(${mx - nx * 26} ${my - ny * 26})`}>
+            {e.students > 0 && <g transform={`translate(${mx - nx * 26} ${my - ny * 26})`}>
               <rect x="-17" y="-12" width="34" height="24" rx="4" fill="#FFFFFF" stroke="#B42318" strokeWidth="1.5" />
               <text textAnchor="middle" y="5" fontSize="14" fontWeight="600" fill="#B42318">{e.students}</text>
-            </g>
+            </g>}
           </g>
         )
       })}

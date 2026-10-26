@@ -117,7 +117,8 @@ export interface SubmissionSnapshot {
   counts: { total: number; clean: number; action: number; auto: number }
   excess: number
   alerts: ComplianceAlert[]
-  rows: Pick<UploadRow, 'rowNo' | 'NAME' | 'INST_STUDENT_ID' | 'PROGRAMME' | 'APAAR_ID'>[]
+  /** Older snapshots carry only the first five fields. */
+  rows: (Pick<UploadRow, 'rowNo' | 'NAME' | 'INST_STUDENT_ID' | 'PROGRAMME' | 'APAAR_ID'> & Partial<Pick<UploadRow, 'DOB' | 'GENDER' | 'CATEGORY' | 'QUOTA' | 'NRI' | 'OCI' | 'FN' | 'NATIONALITY' | 'ADMISSION_DATE' | 'APAAR_EXCEPTION'>>)[]
 }
 
 export const submissions = pgTable('submissions', {

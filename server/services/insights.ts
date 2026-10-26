@@ -1,8 +1,13 @@
+import { inArray } from 'drizzle-orm'
+import { institutions } from '../db/schema'
+import { nameSimilarity } from '../../src/inst/engine/similarity'
+import { PROBABLE_NAME_SIMILARITY } from '../../src/inst/engine/rules'
+import { anomalies } from './anomalies'
 import { sql } from 'drizzle-orm'
 import type { Db } from '../db/client'
 
 /** Points each open alert adds to an institution's risk score (capped at 100). */
-export const RISK_POINTS: Record<string, number> = { R10: 30, R06: 25, R07: 15, R05: 10 }
+export const RISK_POINTS: Record<string, number> = { R10: 30, R06: 25, R11: 20, R07: 15, R05: 10 }
 const CLOSED = 'Reviewed, no action'
 
 const inStates = (column: string, states: string[] | null) =>
@@ -30,7 +35,7 @@ export async function kpis(db: Db, states: string[] | null) {
       where true ${inStates('i.state', states)}`),
     db.execute<{ n: number }>(sql`select count(*)::int as n from (${openAlerts(states)}) o`),
     db.execute<{ n: number }>(sql`
-      select count(*)::int as n from (select apaar from enrolments group by apaar, ay having count(distinct institution_pid) > 1) d`),
+      select count(*)::int as n from (select apaar from enrolments where apaar is not null and status = 'active' group by apaar, ay having count(distinct institution_pid) > 1) d`),
   ])
   const total = rows.rows[0].total
   const pct = (n: number) => (total ? Math.round((n / total) * 1000) / 10 : 0)
@@ -48,12 +53,14 @@ export async function kpis(db: Db, states: string[] | null) {
 export interface StateStat { code: string; institutions: number; submitted: number; excessAlerts: number; openAlerts: number; apaarPct: number }
 export interface WatchItem {
   pid: string; institution: string; city: string; state: string; risk: number; reason: string
-  factors: { label: string; points: number; clause: string; alertId: string }[]
+  factors: { label: string; points: number; clause: string; alertId: string; kind: 'alert' | 'anomaly' }[]
 }
 export interface Ring {
   from: { pid: string; name: string; city: string; state: string }
   to: { pid: string; name: string; city: string; state: string }
   students: { apaar: string; name: string | null }[]
+  /** Probable duplicates: same DOB and very similar name, different or missing APAAR ID. */
+  probable: { a: { name: string; apaar: string | null; instStudentId: string | null }; b: { name: string; apaar: string | null; instStudentId: string | null }; similarity: number }[]
 }
 
 export async function insights(db: Db, states: string[] | null) {
@@ -76,7 +83,7 @@ export async function insights(db: Db, states: string[] | null) {
              b.institution_pid as b_pid, b.institution as b_name, b.city as b_city, coalesce(ib.state, '') as b_state,
              a.apaar, reg.name
       from enrolments a
-      join enrolments b on a.apaar = b.apaar and a.ay = b.ay and a.institution_pid < b.institution_pid
+      join enrolments b on a.apaar = b.apaar and a.ay = b.ay and a.institution_pid < b.institution_pid and a.status = 'active' and b.status = 'active'
       left join institutions ia on ia.pid = a.institution_pid
       left join institutions ib on ib.pid = b.institution_pid
       left join apaar_registry reg on reg.apaar = a.apaar
@@ -99,8 +106,18 @@ export async function insights(db: Db, states: string[] | null) {
   const byInst = new Map<string, WatchItem>()
   for (const a of open.rows) {
     const w = byInst.get(a.institution_pid) ?? { pid: a.institution_pid, institution: a.institution, city: a.city, state: a.state, risk: 0, reason: '', factors: [] }
-    w.factors.push({ label: a.title, points: RISK_POINTS[a.rule] ?? 5, clause: a.clause, alertId: a.id })
+    w.factors.push({ label: a.title, points: RISK_POINTS[a.rule] ?? 5, clause: a.clause, alertId: a.id, kind: 'alert' })
     byInst.set(a.institution_pid, w)
+  }
+  // Statistical anomalies add to the risk score with their reason, even for institutions without open alerts.
+  const found = await anomalies(db, states)
+  if (found.size) {
+    const info = await db.select().from(institutions).where(inArray(institutions.pid, [...found.keys()]))
+    for (const i of info) {
+      const w = byInst.get(i.pid) ?? { pid: i.pid, institution: i.name, city: i.city, state: i.state, risk: 0, reason: '', factors: [] }
+      for (const an of found.get(i.pid)!) w.factors.push({ label: an.label, points: an.points, clause: '', alertId: `anomaly:${an.key}`, kind: 'anomaly' })
+      byInst.set(i.pid, w)
+    }
   }
   const watchlist = [...byInst.values()].map((w) => {
     w.factors.sort((x, y) => y.points - x.points)
@@ -116,11 +133,34 @@ export async function insights(db: Db, states: string[] | null) {
     const ring = rings.get(key) ?? {
       from: { pid: r.a_pid, name: r.a_name, city: r.a_city, state: r.a_state },
       to: { pid: r.b_pid, name: r.b_name, city: r.b_city, state: r.b_state },
-      students: [],
+      students: [], probable: [],
     }
     ring.students.push({ apaar: r.apaar, name: r.name })
     rings.set(key, ring)
   }
 
-  return { states: stateStats, watchlist, rings: [...rings.values()].sort((x, y) => y.students.length - x.students.length) }
+  // Probable duplicates across institutions: same DOB, name similarity >= PROBABLE_NAME_SIMILARITY, APAAR IDs differ or are missing.
+  const sameDob = await db.execute<{ pid: string; institution: string; city: string; state: string; name: string; dob: string; gender: string | null; apaar: string | null; inst_student_id: string | null }>(sql`
+    select e.institution_pid as pid, e.institution, e.city, coalesce(i.state, '') as state, e.name, e.dob::text as dob, e.gender, e.apaar, e.inst_student_id
+    from enrolments e left join institutions i on i.pid = e.institution_pid
+    where e.status = 'active' and e.dob is not null and e.name is not null and e.dob in (
+      select dob from enrolments where status = 'active' and dob is not null group by dob, ay having count(distinct institution_pid) > 1)
+    order by e.dob, e.institution_pid`)
+  const groups = new Map<string, typeof sameDob.rows>()
+  for (const r of sameDob.rows) groups.set(r.dob, [...(groups.get(r.dob) ?? []), r])
+  for (const g of groups.values()) {
+    for (let x = 0; x < g.length; x++) for (let y = x + 1; y < g.length; y++) {
+      const [a, b] = g[x].pid < g[y].pid ? [g[x], g[y]] : [g[y], g[x]]
+      if (a.pid === b.pid || (a.apaar && a.apaar === b.apaar) || (a.gender && b.gender && a.gender !== b.gender)) continue
+      const sim = nameSimilarity(a.name, b.name)
+      if (sim < PROBABLE_NAME_SIMILARITY) continue
+      if (states && !states.includes(a.state) && !states.includes(b.state)) continue
+      const key = `${a.pid}|${b.pid}`
+      const ring = rings.get(key) ?? { from: { pid: a.pid, name: a.institution, city: a.city, state: a.state }, to: { pid: b.pid, name: b.institution, city: b.city, state: b.state }, students: [], probable: [] }
+      ring.probable.push({ a: { name: a.name, apaar: a.apaar, instStudentId: a.inst_student_id }, b: { name: b.name, apaar: b.apaar, instStudentId: b.inst_student_id }, similarity: Math.round(sim * 100) / 100 })
+      rings.set(key, ring)
+    }
+  }
+
+  return { states: stateStats, watchlist, rings: [...rings.values()].sort((x, y) => (y.students.length + y.probable.length) - (x.students.length + x.probable.length)) }
 }
