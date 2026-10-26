@@ -15,6 +15,8 @@ import { studentRoutes } from './routes/student'
 import { verifierRoutes } from './routes/verifier'
 import { publicRoutes } from './routes/public'
 import { auditRoutes } from './routes/audit'
+import { v1Routes } from './routes/v1'
+import { openapi } from './openapi'
 
 export interface AppOptions {
   db: Db
@@ -55,6 +57,8 @@ export function createApp({ db, staticDir, loginLimit }: AppOptions) {
       res.status(503).json({ status: 'degraded', db: 'down' })
     }
   })
+  api.get('/openapi.json', (_req, res) => { res.json(openapi) })
+  api.use('/v1', v1Routes())
   api.use(loadSession)
   api.use('/auth', authRoutes({ loginLimit }))
   api.use('/inst', instRoutes())

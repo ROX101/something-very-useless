@@ -4,12 +4,14 @@ import { and, desc, eq } from 'drizzle-orm'
 import { z } from 'zod'
 import { COLUMNS, type UploadRow } from '../../src/inst/engine/types'
 import { runRules } from '../../src/inst/engine/rules'
-import { complianceAlerts, enrolments, institutions, programmes, submissions, uploads } from '../db/schema'
+import { apiKeys, complianceAlerts, enrolments, institutions, programmes, submissions, uploads } from '../db/schema'
+import { createKey, toPublicKey } from '../lib/apikeys'
 import { audit } from '../lib/audit'
 import { requireRole } from '../lib/auth'
 import { badRequest, conflict, forbidden, handler, notFound, parse } from '../lib/http'
 import { next } from '../lib/counters'
 import { buildContext, validate } from '../services/validation'
+import { createUpload, currentUpload } from '../services/uploads'
 
 const MAX_ROWS = 20000
 const AY = '2026-27'
@@ -36,10 +38,6 @@ export function instRoutes() {
 
   const pidOf = (req: Express.Request) => req.user!.institutionPid!
 
-  async function currentUpload(db: Express.Request['db'], pid: string) {
-    const [u] = await db.select().from(uploads).where(and(eq(uploads.institutionPid, pid), eq(uploads.current, true))).orderBy(desc(uploads.id)).limit(1)
-    return u ?? null
-  }
 
   r.get('/state', handler(async (req, res) => {
     const pid = pidOf(req)
@@ -62,15 +60,7 @@ export function instRoutes() {
   r.post('/uploads', handler(async (req, res) => {
     const pid = pidOf(req)
     const body = parse(Upload, req.body)
-    const created = await req.db.transaction(async (tx) => {
-      await tx.update(uploads).set({ current: false }).where(and(eq(uploads.institutionPid, pid), eq(uploads.current, true)))
-      const [u] = await tx.insert(uploads).values({ institutionPid: pid, fileName: body.fileName, uploadedBy: req.user!.userId, rows: body.rows }).returning()
-      await audit(tx, req.user!, {
-        category: 'Data', action: body.fileName.startsWith('Manual entry') ? 'Sent manual entries for validation' : 'Uploaded enrolment file',
-        detail: `${body.fileName}, ${body.rows.length} rows`, entity: 'upload', entityId: String(u.id),
-      })
-      return u
-    })
+    const created = await createUpload(req.db, req.user!, pid, body.fileName, body.rows)
     const ctx = await buildContext(req.db, pid, created.rows)
     const result = runRules(created.rows, ctx)
     res.status(201).json({
@@ -115,6 +105,27 @@ export function instRoutes() {
     const u = await currentUpload(req.db, pid)
     if (!u) throw notFound('No upload in progress')
     res.json(await validate(req.db, pid, u.rows))
+  }))
+
+  // ERP integration keys. Anyone at the institution can see them; only the nodal officer creates or revokes.
+  r.get('/api-keys', handler(async (req, res) => {
+    const rows = await req.db.select().from(apiKeys).where(eq(apiKeys.institutionPid, pidOf(req))).orderBy(desc(apiKeys.createdAt))
+    res.json(rows.map(toPublicKey))
+  }))
+
+  r.post('/api-keys', requireRole('inst_admin'), handler(async (req, res) => {
+    const { name } = parse(z.object({ name: z.string().trim().min(2).max(60) }), req.body)
+    const k = await createKey(req.db, { scope: 'institution', institutionPid: pidOf(req), name, createdBy: req.user!.userId })
+    await audit(req.db, req.user!, { category: 'Administration', action: 'Created API key', detail: `${name} (${k.id})`, entity: 'api_key', entityId: k.id })
+    res.status(201).json({ id: k.id, name, key: k.key })
+  }))
+
+  r.delete('/api-keys/:id', requireRole('inst_admin'), handler(async (req, res) => {
+    const [k] = await req.db.update(apiKeys).set({ revokedAt: new Date().toISOString() })
+      .where(and(eq(apiKeys.id, req.params.id), eq(apiKeys.institutionPid, pidOf(req)))).returning()
+    if (!k) throw notFound('No such key')
+    await audit(req.db, req.user!, { category: 'Administration', action: 'Revoked API key', detail: `${k.name} (${k.id})`, entity: 'api_key', entityId: k.id })
+    res.status(204).end()
   }))
 
   r.get('/submissions', handler(async (req, res) => {

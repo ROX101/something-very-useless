@@ -15,7 +15,7 @@ export const CATEGORIES = ['Sign-in', 'Data', 'Submission', 'Compliance', 'Conse
 export type Category = (typeof CATEGORIES)[number]
 
 /** Who an entry is attributed to. Signed-in users come from the session; the public is "Public". */
-export interface Who { userId: string; role: Role | 'public'; name: string; org: string }
+export interface Who { userId: string; role: Role | 'public' | 'api'; name: string; org: string }
 
 export const asWho = (u: SessionUser): Who => ({ userId: u.userId, role: u.role, name: u.name, org: u.org })
 export const PUBLIC: Who = { userId: 'public', role: 'public', name: 'Public', org: '' }
@@ -42,7 +42,7 @@ export function canonical(e: Omit<TrailEntry, 'hash'>) {
 }
 
 const sha = (s: string) => createHash('sha256').update(s).digest('hex')
-const roleLabel = (r: Who['role']) => (r === 'public' ? 'Public' : ROLE_LABEL[r])
+const roleLabel = (r: Who['role']) => (r === 'public' ? 'Public' : r === 'api' ? 'API client' : ROLE_LABEL[r])
 
 /**
  * Appends to the hash-chained audit trail inside the caller's transaction (or a new one).

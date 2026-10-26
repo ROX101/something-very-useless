@@ -7,6 +7,7 @@ import { parseWorkbook, downloadErrorReport, downloadRows, downloadTemplate, typ
 import { blankRow } from '../fields'
 import { audit } from '../../audit/log'
 import { DataPreview } from '../ui/DataPreview'
+import { ApiAccess } from '../ui/ApiAccess'
 import { StudentDrawer, StudentForm } from '../ui/StudentForm'
 import { GATES, RULE_INFO, applyAllFixes, applyFix, runRules } from '../engine/rules'
 import { PREVIEW_CONTEXT } from '../data/dataset'
@@ -160,30 +161,7 @@ function SelectFile({ onFile, error, onManual }: { onFile: (f: File) => void; er
 
       {tab === 'manual' && <ManualEntry onValidate={onManual} />}
 
-      {tab === 'api' && (
-        <Card className="p-6">
-          <div className="flex flex-wrap items-center gap-2">
-            <span className="rounded bg-ok-bg px-2 py-0.5 text-xs font-semibold text-igreen">OpenAPI 3.1</span>
-            <span className="rounded bg-page px-2 py-0.5 text-xs font-semibold text-ink">API key + mTLS</span>
-            <span className="rounded bg-page px-2 py-0.5 text-xs font-semibold text-ink">Batches of up to 1,000 records</span>
-          </div>
-          <pre className="mt-4 overflow-x-auto rounded bg-neutral-900 p-5 text-[0.8125rem] leading-relaxed text-neutral-100">{`POST /v1/institutions/${INSTITUTION.pid}/enrolments:batch
-Authorization: Bearer <client-credentials token>
-Idempotency-Key: 6f1c2e0a-…
-
-{
-  "academicYear": "${INSTITUTION.ay}",
-  "records": [
-    { "apaarId": "4471…", "instStudentId": "ARN26CSE001",
-      "name": "…", "dob": "2008-03-15", "programme": "B.Tech CSE",
-      "quota": "REGULAR", "nri": "N", "oci": "N", "fn": "N" }
-  ]
-}
-
-→ 202 Accepted  { "jobId": "val-…", "status": "VALIDATING" }`}</pre>
-          <p className="mt-4 text-sm text-muted">Records sent by API go through the same six validation gates as an Excel upload, and results are returned by webhook.</p>
-        </Card>
-      )}
+      {tab === 'api' && <ApiAccess pid={INSTITUTION.pid} ay={INSTITUTION.ay} />}
     </>
   )
 }

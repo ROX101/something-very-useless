@@ -3,7 +3,8 @@ import { and, asc, desc, eq, inArray, sql } from 'drizzle-orm'
 import { z } from 'zod'
 import { insights, kpis } from '../services/insights'
 import type { Db } from '../db/client'
-import { alertActions, auditLog, complianceAlerts, submissions } from '../db/schema'
+import { alertActions, apiKeys, auditLog, complianceAlerts, submissions } from '../db/schema'
+import { createKey, toPublicKey } from '../lib/apikeys'
 import { audit, toTrail, verifyChain } from '../lib/audit'
 import { requireRole, type SessionUser } from '../lib/auth'
 import { forbidden, handler, notFound, parse } from '../lib/http'
@@ -118,6 +119,26 @@ export function aicteRoutes() {
 
   r.get('/audit/verify', requireRole('aicte_bureau', 'aicte_admin'), handler(async (req, res) => {
     res.json(await verifyChain(req.db))
+  }))
+
+  // Keys for AICTE systems (e.g. the approval portal pushing approved intake). IT cell only.
+  r.get('/api-keys', requireRole('aicte_admin'), handler(async (req, res) => {
+    const rows = await req.db.select().from(apiKeys).where(eq(apiKeys.scope, 'aicte')).orderBy(desc(apiKeys.createdAt))
+    res.json(rows.map(toPublicKey))
+  }))
+
+  r.post('/api-keys', requireRole('aicte_admin'), handler(async (req, res) => {
+    const { name } = parse(z.object({ name: z.string().trim().min(2).max(60) }), req.body)
+    const k = await createKey(req.db, { scope: 'aicte', name, createdBy: req.user!.userId })
+    await audit(req.db, req.user!, { category: 'Administration', action: 'Created API key', detail: `${name} (${k.id}), AICTE systems`, entity: 'api_key', entityId: k.id })
+    res.status(201).json({ id: k.id, name, key: k.key })
+  }))
+
+  r.delete('/api-keys/:id', requireRole('aicte_admin'), handler(async (req, res) => {
+    const [k] = await req.db.update(apiKeys).set({ revokedAt: new Date().toISOString() }).where(and(eq(apiKeys.id, req.params.id), eq(apiKeys.scope, 'aicte'))).returning()
+    if (!k) throw notFound('No such key')
+    await audit(req.db, req.user!, { category: 'Administration', action: 'Revoked API key', detail: `${k.name} (${k.id})`, entity: 'api_key', entityId: k.id })
+    res.status(204).end()
   }))
 
   r.get('/submissions', officers, handler(async (req, res) => {

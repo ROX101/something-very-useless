@@ -24,6 +24,8 @@ export const programmes = pgTable('programmes', {
   label: text('label').notNull(),
   name: text('name').notNull(),
   intake: integer('intake').notNull(),
+  /** First-year admissions last academic year, from AICTE approval data. Used for year-on-year anomaly checks. */
+  lastYearAdmitted: integer('last_year_admitted'),
 }, (t) => [primaryKey({ columns: [t.institutionPid, t.code] })])
 
 export const users = pgTable('users', {
@@ -190,6 +192,31 @@ export const registrations = pgTable('registrations', {
   status: varchar('status', { length: 12 }).notNull().default('Received'),
   createdAt: ts('created_at').notNull().defaultNow(),
 })
+
+/**
+ * Machine-to-machine keys. scope 'institution' keys act for one institution (ERP integration);
+ * scope 'aicte' keys are for AICTE systems (approved-intake import). Only a SHA-256 of the secret is stored.
+ */
+export const apiKeys = pgTable('api_keys', {
+  id: varchar('id', { length: 24 }).primaryKey(),
+  scope: varchar('scope', { length: 12 }).notNull(),
+  institutionPid: varchar('institution_pid', { length: 20 }).references(() => institutions.pid),
+  name: text('name').notNull(),
+  secretHash: char('secret_hash', { length: 64 }).notNull(),
+  createdBy: text('created_by').notNull(),
+  createdAt: ts('created_at').notNull().defaultNow(),
+  lastUsedAt: ts('last_used_at'),
+  revokedAt: ts('revoked_at'),
+})
+
+/** Replays the stored response when a client retries a request with the same Idempotency-Key. */
+export const idempotency = pgTable('idempotency', {
+  key: text('key').notNull(),
+  apiKeyId: varchar('api_key_id', { length: 24 }).notNull(),
+  status: integer('status').notNull(),
+  response: jsonb('response').$type<unknown>().notNull(),
+  createdAt: ts('created_at').notNull().defaultNow(),
+}, (t) => [primaryKey({ columns: [t.apiKeyId, t.key] })])
 
 export const counters = pgTable('counters', {
   name: text('name').primaryKey(),
