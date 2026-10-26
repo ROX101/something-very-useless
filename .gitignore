@@ -5,3 +5,4 @@ server/dist
 .env.*
 !.env.example
 .data
+*.tsbuildinfo
