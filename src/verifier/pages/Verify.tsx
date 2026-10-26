@@ -1,10 +1,11 @@
 import { useEffect, useRef, useState } from 'react'
 import { Html5Qrcode } from 'html5-qrcode'
 import jsQR from 'jsqr'
-import { VERIFIER, VerifierLayout } from '../VerifierLayout'
+import { VerifierLayout } from '../VerifierLayout'
+import { useApp } from '../../store'
 import { PageTitle, Panel, btn, formatDate, maskApaar } from '../../inst/ui/bits'
-import { verifyCredential, type VerifyResult } from '../../verify/crypto'
-import { PRIVATE_FIELDS, activeConsent, useConsent, type SharedRecord } from '../../verify/consent'
+import { readCode, verifyCredential, type VerifyResult } from '../../verify/crypto'
+import { PURPOSES, activeConsent, useConsent, type SharedRecord } from '../../verify/consent'
 import { fingerprint, inspect, mergeRegions, type StegoReport } from '../../verify/stego'
 import { audit } from '../../audit/log'
 
@@ -259,9 +260,13 @@ function MarkPanel({ mark }: { mark: Mark }) {
   useEffect(() => {
     let live = true
     if (!report.message || !mark.code) { setMatch(null); return }
+    // New certificates carry a link in the QR: the watermark must name the same certificate.
+    // Older cards carry the signed token itself: compare its fingerprint.
+    const code = readCode(mark.code)
+    if (code?.kind === 'link') { setMatch(code.certNo === certNo); return }
     fingerprint(mark.code).then((f) => { if (live) setMatch(f === fp) })
     return () => { live = false }
-  }, [report.message, mark.code, fp])
+  }, [report.message, mark.code, fp, certNo])
 
   const noMark = !report.message && report.edited.length > report.blocks * 0.5
   const regions = mergeRegions(report.edited)
@@ -309,8 +314,13 @@ function MarkPanel({ mark }: { mark: Mark }) {
 function Result({ r, onReset }: { r: VerifyResult; onReset: () => void }) {
   const { requests, request, view } = useConsent()
   const apaar = r.ok ? r.credential.vc.credentialSubject.apaar : ''
-  const consent = r.ok ? activeConsent(requests, apaar, VERIFIER.org) : undefined
-  const waiting = r.ok && !consent && requests.some((x) => x.apaar === apaar && x.verifierOrg === VERIFIER.org && x.status === 'Pending')
+  const org = useApp((st) => st.account?.org ?? '')
+  const consent = r.ok ? activeConsent(requests, apaar, org) : undefined
+  const waiting = r.ok && !consent && requests.some((x) => x.apaar === apaar && x.verifierOrg === org && x.status === 'Pending')
+  const [purposeId, setPurposeId] = useState<string>(PURPOSES[0].id)
+  const [reference, setReference] = useState('')
+  const [wantMarks, setWantMarks] = useState(false)
+  const purpose = PURPOSES.find((p) => p.id === purposeId)!
   const [shared, setShared] = useState<SharedRecord | null>(null)
   const [askErr, setAskErr] = useState('')
   const viewedFor = useRef<string | null>(null)
@@ -333,8 +343,9 @@ function Result({ r, onReset }: { r: VerifyResult; onReset: () => void }) {
 
   async function ask() {
     setAskErr('')
+    if (reference.trim().length < 4) { setAskErr(`Enter the ${purpose.reference.toLowerCase()}.`); return }
     try {
-      await request({ apaar, purpose: 'Pre-employment background verification', reference: 'Offer letter TSPL/HR/OL/2026/1187', validityDays: 7, retentionDays: 30 })
+      await request({ apaar, purpose: purpose.label, reference: `${purpose.reference.replace(' number', '')} ${reference.trim()}`, validityDays: 7, retentionDays: 30, fields: wantMarks ? ['basic', 'marks'] : ['basic'] })
     } catch (e) {
       setAskErr((e as Error).message)
     }
@@ -344,7 +355,7 @@ function Result({ r, onReset }: { r: VerifyResult; onReset: () => void }) {
     ? { tone: 'border-l-err bg-err-bg', title: 'Signature invalid', text: r.reason, cls: 'animate-[shake_.35s_ease-in-out]' }
     : consent
       ? { tone: 'border-l-ok bg-ok-bg', title: 'Verified', text: `Issued by ${r.issuer.name}`, cls: '' }
-      : { tone: 'border-l-warn bg-warn-bg', title: 'Signature valid', text: 'The student has not allowed your organisation to see the details yet.', cls: '' }
+      : { tone: 'border-l-ok bg-ok-bg', title: 'Genuine certificate', text: `Signed by ${r.issuer.name}. For marks or a logged verification record, ask the student.`, cls: '' }
 
   return (
     <section className={`rounded border border-line bg-white ${head.cls}`}>
@@ -353,15 +364,20 @@ function Result({ r, onReset }: { r: VerifyResult; onReset: () => void }) {
         <p className="text-ink">{head.text}</p>
       </div>
 
-      {r.ok && consent && (
+      {r.ok && (
         <dl className="grid gap-x-8 gap-y-3 border-b border-line px-5 py-4 text-[0.9375rem] sm:grid-cols-2">
           <div><dt className="text-sm text-muted">Name</dt><dd className="font-semibold">{r.credential.vc.credentialSubject.name}</dd></div>
           <div><dt className="text-sm text-muted">Degree</dt><dd>{r.credential.vc.credentialSubject.degree}</dd></div>
           <div><dt className="text-sm text-muted">Year of award</dt><dd>{r.credential.vc.credentialSubject.year}</dd></div>
-          <div><dt className="text-sm text-muted">Award status</dt><dd className={shared?.status === 'Revoked' ? 'font-semibold text-err' : ''}>{shared?.status ?? 'Checking…'}</dd></div>
+          <div><dt className="text-sm text-muted">Certificate number</dt><dd className="font-mono">{r.certNo}</dd></div>
           <div><dt className="text-sm text-muted">APAAR ID</dt><dd className="font-mono">{maskApaar(apaar)}</dd></div>
-          <div><dt className="text-sm text-muted">Student consent</dt><dd>{consent.consentNo}, until {formatDate(consent.expiresAt!)}</dd></div>
-          <p className="text-sm text-muted sm:col-span-2">Not shared by the student: {PRIVATE_FIELDS.join(', ').toLowerCase()}.</p>
+          {consent && <div><dt className="text-sm text-muted">Award status (live record)</dt><dd className={shared?.status === 'Revoked' ? 'font-semibold text-err' : ''}>{shared?.status ?? 'Checking…'}</dd></div>}
+          {consent && shared?.fields.includes('marks') && <>
+            <div><dt className="text-sm text-muted">CGPA</dt><dd className="font-semibold">{shared.cgpa}</dd></div>
+            <div><dt className="text-sm text-muted">Division</dt><dd>{shared.division}</dd></div>
+          </>}
+          {consent && <div className="sm:col-span-2"><dt className="text-sm text-muted">Student consent</dt><dd>{consent.consentNo}, until {formatDate(consent.expiresAt!)}{shared && !shared.fields.includes('marks') ? '. Marks were not part of this consent.' : ''}</dd></div>}
+          <p className="text-sm text-muted sm:col-span-2">Compare these with the document in front of you. Category, address and date of birth are never shared.</p>
         </dl>
       )}
 
@@ -369,7 +385,23 @@ function Result({ r, onReset }: { r: VerifyResult; onReset: () => void }) {
         <div className="border-b border-line px-5 py-4">
           {waiting
             ? <p className="text-ink">Request sent. Waiting for the student to allow or refuse.</p>
-            : <button className={btn.primary} onClick={ask}>Ask the student for consent</button>}
+            : (
+              <div className="grid gap-3 sm:grid-cols-2">
+                <label className="text-sm text-muted">Purpose
+                  <select value={purposeId} onChange={(e) => setPurposeId(e.target.value)} className="mt-1 h-11 w-full rounded border border-line bg-white px-3 text-[0.9375rem]">
+                    {PURPOSES.map((p) => <option key={p.id} value={p.id}>{p.label}</option>)}
+                  </select>
+                </label>
+                <label className="text-sm text-muted">{purpose.reference}
+                  <input value={reference} onChange={(e) => setReference(e.target.value)} placeholder={`For example ${purpose.example}`} className="mt-1 h-11 w-full rounded border border-line bg-white px-3 font-mono text-[0.9375rem]" />
+                </label>
+                <label className="flex items-center gap-2 text-sm text-ink sm:col-span-2">
+                  <input type="checkbox" checked={wantMarks} onChange={(e) => setWantMarks(e.target.checked)} className="h-4 w-4 accent-navy" />
+                  Also ask to see marks (CGPA and division). The student can see that you asked.
+                </label>
+                <div className="sm:col-span-2"><button className={btn.primary} onClick={ask}>Ask the student for consent</button></div>
+              </div>
+            )}
           {askErr && <p role="alert" className="mt-2 text-sm text-err">{askErr}</p>}
         </div>
       )}
@@ -389,7 +421,7 @@ function Result({ r, onReset }: { r: VerifyResult; onReset: () => void }) {
         )}
       </ol>
       <div className="flex flex-wrap items-center justify-between gap-3 border-t border-line px-5 py-3">
-        <p className="text-sm text-muted">W3C Verifiable Credentials 2.0, JWS ES256 (ECDSA P-256)</p>
+        <p className="text-sm text-muted">W3C Verifiable Credentials 2.0, JWS ES256 (ECDSA P-256), W3C Bitstring Status List</p>
         <button className={btn.link} onClick={onReset}>Scan another certificate</button>
       </div>
     </section>

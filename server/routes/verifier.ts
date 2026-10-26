@@ -15,9 +15,11 @@ const NewRequest = z.object({
   reference: z.string().max(200).default(''),
   validityDays: z.number().int().min(1).max(90),
   retentionDays: z.number().int().min(1).max(3650).default(30),
+  /** 'basic' is always shared; 'marks' (CGPA, division) only if the student agrees. */
+  fields: z.array(z.enum(['basic', 'marks'])).default(['basic']).transform((f) => [...new Set(['basic', ...f])]),
 })
 
-interface Subject { name?: string; degree?: string; year?: number }
+interface Subject { name?: string; degree?: string; year?: number; cgpa?: string; div?: string }
 
 export function verifierRoutes() {
   const r = Router()
@@ -42,7 +44,7 @@ export function verifierRoutes() {
       const id = `RQ-${await next(tx, 'request', 1001)}`
       const [row] = await tx.insert(verificationRequests).values({
         id, apaar: body.apaar, verifierUserId: req.user!.userId, verifier: req.user!.name, verifierOrg: req.user!.org,
-        purpose: body.purpose, reference: body.reference, validityDays: body.validityDays, retentionDays: body.retentionDays,
+        purpose: body.purpose, reference: body.reference, validityDays: body.validityDays, retentionDays: body.retentionDays, fields: body.fields,
       }).returning()
       await log(tx, body.apaar, req.user!.org, 'Requested to verify your degree')
       await audit(tx, req.user!, {
@@ -67,6 +69,7 @@ export function verifierRoutes() {
     const [cred] = await req.db.select().from(credentials).where(eq(credentials.apaar, apaar)).orderBy(desc(credentials.issuedAt)).limit(1)
     const reg = await req.db.query.apaarRegistry.findFirst({ where: eq(apaarRegistry.apaar, apaar) })
     const subject = cred ? ((decodeJwt(cred.jws).vc as { credentialSubject?: Subject } | undefined)?.credentialSubject ?? {}) : {}
+    const marks = consent.fields.includes('marks')
 
     await log(req.db, apaar, req.user!.org, `Viewed your degree status (${consent.consentNo})`)
     await audit(req.db, req.user!, { category: 'Verification', action: 'Viewed shared record', detail: `APAAR ${maskApaar(apaar)} under consent ${consent.consentNo}`, entity: 'student', entityId: apaar })
@@ -78,6 +81,8 @@ export function verifierRoutes() {
       degree: subject.degree ?? null,
       year: subject.year ?? null,
       status: cred ? (cred.revoked ? 'Revoked' : 'Awarded') : 'No degree on record',
+      ...(marks && cred ? { cgpa: cred.cgpa ?? subject.cgpa ?? null, division: cred.division ?? subject.div ?? null } : {}),
+      fields: consent.fields,
       certNo: cred?.certNo ?? null,
     })
   }))

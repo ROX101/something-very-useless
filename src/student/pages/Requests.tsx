@@ -3,6 +3,11 @@ import { STUDENT, StudentLayout } from '../StudentLayout'
 import { PageTitle, Panel, btn, formatDate } from '../../inst/ui/bits'
 import { PRIVATE_FIELDS, SHARED_FIELDS, useConsent, type VerificationRequest } from '../../verify/consent'
 
+const MARKS = 'Marks and CGPA'
+/** What this particular request would share, and what it would not. */
+const sharedFor = (r: VerificationRequest) => (r.fields?.includes('marks') ? [...SHARED_FIELDS, 'Marks: CGPA and division'] : SHARED_FIELDS)
+const privateFor = (r: VerificationRequest) => (r.fields?.includes('marks') ? PRIVATE_FIELDS.filter((f) => f !== MARKS) : PRIVATE_FIELDS)
+
 export default function Requests() {
   const all = useConsent((s) => s.requests).filter((r) => r.apaar === STUDENT.apaar)
   const pending = all.filter((r) => r.status === 'Pending')
@@ -32,7 +37,7 @@ export default function Requests() {
               <dl className="grid gap-x-8 gap-y-3 px-5 py-4 text-[0.9375rem] sm:grid-cols-3">
                 <div><dt className="text-sm text-muted">Consent number</dt><dd className="font-mono">{r.consentNo}</dd></div>
                 <div><dt className="text-sm text-muted">Valid until</dt><dd>{formatDate(r.expiresAt!)}</dd></div>
-                <div><dt className="text-sm text-muted">Shared</dt><dd>{SHARED_FIELDS.join(', ')}</dd></div>
+                <div><dt className="text-sm text-muted">Shared</dt><dd>{sharedFor(r).join(', ')}</dd></div>
               </dl>
               <div className="border-t border-line px-5 py-3">
                 <button className={btn.secondary} onClick={() => { revoke(r.id); setJustApproved(null) }}>Revoke consent</button>
@@ -58,13 +63,13 @@ export default function Requests() {
               <div>
                 <p className="text-sm font-semibold text-ink">Will be shared</p>
                 <ul className="mt-2 space-y-1.5">
-                  {SHARED_FIELDS.map((f) => <li key={f} className="flex items-center gap-2"><Mark ok />{f}</li>)}
+                  {sharedFor(r).map((f) => <li key={f} className="flex items-center gap-2"><Mark ok />{f}</li>)}
                 </ul>
               </div>
               <div>
                 <p className="text-sm font-semibold text-ink">Will not be shared</p>
                 <ul className="mt-2 space-y-1.5">
-                  {PRIVATE_FIELDS.map((f) => <li key={f} className="flex items-center gap-2 text-muted"><Mark />{f}</li>)}
+                  {privateFor(r).map((f) => <li key={f} className="flex items-center gap-2 text-muted"><Mark />{f}</li>)}
                 </ul>
               </div>
             </div>

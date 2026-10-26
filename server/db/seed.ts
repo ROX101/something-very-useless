@@ -1,15 +1,18 @@
 import bcrypt from 'bcryptjs'
-import { sql } from 'drizzle-orm'
+import { and, eq, isNull, sql } from 'drizzle-orm'
 import { ACCOUNTS, DEMO_PASSWORD, type Role } from '../../src/auth/directory'
 import { generateDataset } from '../../src/inst/data/generate'
 import { INSTITUTION, PROGRAMMES } from '../../src/inst/data/reference'
-import { GENUINE_JWS } from '../../src/verify/credentials'
+import { createIssuer } from '../lib/signing'
+import { issueCredential } from '../services/credentials'
 import type { Db } from './client'
 import * as t from './schema'
 
 export const STUDENT_APAAR = '447120936618'
+export const GTU_DID = 'did:web:godavaritu.edu.in'
 
-const USER_LINKS: Partial<Record<Role, { institutionPid?: string; apaar?: string; states?: string[] }>> = {
+const USER_LINKS: Partial<Record<Role, { institutionPid?: string; apaar?: string; states?: string[]; issuerDid?: string }>> = {
+  university: { issuerDid: GTU_DID },
   inst_admin: { institutionPid: INSTITUTION.pid },
   inst_operator: { institutionPid: INSTITUTION.pid },
   student: { apaar: STUDENT_APAAR },
@@ -17,7 +20,7 @@ const USER_LINKS: Partial<Record<Role, { institutionPid?: string; apaar?: string
 }
 
 const TABLES = [
-  'idempotency', 'api_keys', 'audit_log', 'registrations', 'access_log', 'verification_requests', 'alert_actions', 'compliance_alerts', 'submissions',
+  'idempotency', 'api_keys', 'audit_log', 'issuers', 'registrations', 'access_log', 'verification_requests', 'alert_actions', 'compliance_alerts', 'submissions',
   'uploads', 'enrolments', 'credentials', 'apaar_registry', 'users', 'programmes', 'institutions', 'counters',
 ]
 
@@ -43,11 +46,13 @@ export async function seed(db: Db, { force = false } = {}) {
   const hash = await bcrypt.hash(DEMO_PASSWORD, 10)
 
   await db.transaction(async (tx) => {
+    await createIssuer(tx, { did: GTU_DID, name: INSTITUTION.university, short: 'GTU', city: 'Nashik' })
     await tx.insert(t.institutions).values([
       {
         pid: INSTITUTION.pid, name: INSTITUTION.name, city: INSTITUTION.city, state: 'MH',
         university: INSTITUTION.university, type: INSTITUTION.type, initials: INSTITUTION.initials,
         established: INSTITUTION.established, approval: INSTITUTION.approval, motto: INSTITUTION.motto,
+        awardingDid: GTU_DID,
       },
     ])
 
@@ -58,6 +63,7 @@ export async function seed(db: Db, { force = false } = {}) {
       institutionPid: USER_LINKS[a.role]?.institutionPid ?? null,
       apaar: USER_LINKS[a.role]?.apaar ?? null,
       states: USER_LINKS[a.role]?.states ?? [],
+      issuerDid: USER_LINKS[a.role]?.issuerDid ?? null,
     })))
 
     const registry = [
@@ -68,16 +74,60 @@ export async function seed(db: Db, { force = false } = {}) {
       await tx.insert(t.apaarRegistry).values(registry.slice(i, i + 500)).onConflictDoNothing()
     }
 
-    await tx.insert(t.credentials).values({
-      certNo: 'GTU-2026-CSE-0417', apaar: STUDENT_APAAR, jws: GENUINE_JWS, issuedAt: '2026-07-15T10:00:00+05:30',
-    })
-
     await tx.insert(t.counters).values([
       { name: 'consent', value: 7730 },
       { name: 'request', value: 1000 },
       { name: `receipt:${INSTITUTION.pid}`, value: 90 },
+      // the demo degree keeps its familiar number and status-list position
+      { name: `status:${GTU_DID}`, value: 416 },
     ])
+    await issueCredential(tx, {
+      issuerDid: GTU_DID, certNo: 'GTU-2026-CSE-0417', apaar: STUDENT_APAAR, holderName: 'Ritika Deshmukh', studentId: 'GTU/2022/CSE/0417',
+      programmeCode: 'CSE', degree: 'B.Tech, Computer Science & Engineering', year: 2026, cgpa: '8.42', division: 'First Class with Distinction',
+      issuedAt: '2026-07-15T10:00:00+05:30',
+    }, 'registrar@godavaritu.edu.in')
+
   })
 
   return { seeded: true }
+}
+
+/**
+ * Brings a database seeded by an earlier version up to date without touching real activity:
+ * registers the demo university as an issuer, adds demo accounts that did not exist yet, links Aranya to its
+ * university, and re-issues the demo degree with the server's own key (old rows lacked the public summary).
+ */
+export async function upgradeSeed(db: Db) {
+  if (!(await isSeeded(db))) return { upgraded: [] as string[] }
+  const done: string[] = []
+  await db.transaction(async (tx) => {
+    if (!(await tx.query.issuers.findFirst({ where: eq(t.issuers.did, GTU_DID) }))) {
+      await createIssuer(tx, { did: GTU_DID, name: INSTITUTION.university, short: 'GTU', city: 'Nashik' })
+      done.push('issuer')
+    }
+    const have = new Set((await tx.select({ id: t.users.userId }).from(t.users)).map((u) => u.id))
+    const missing = ACCOUNTS.filter((a) => !have.has(a.userId))
+    if (missing.length) {
+      const hash = await bcrypt.hash(DEMO_PASSWORD, 10)
+      await tx.insert(t.users).values(missing.map((a) => ({
+        userId: a.userId, passwordHash: hash, name: a.name, role: a.role, org: a.org, scope: a.scope,
+        institutionPid: USER_LINKS[a.role]?.institutionPid ?? null, apaar: USER_LINKS[a.role]?.apaar ?? null,
+        states: USER_LINKS[a.role]?.states ?? [], issuerDid: USER_LINKS[a.role]?.issuerDid ?? null,
+      })))
+      done.push(`accounts:${missing.map((a) => a.role).join(',')}`)
+    }
+    await tx.update(t.institutions).set({ awardingDid: GTU_DID }).where(and(eq(t.institutions.pid, INSTITUTION.pid), isNull(t.institutions.awardingDid)))
+    const demo = await tx.query.credentials.findFirst({ where: eq(t.credentials.certNo, 'GTU-2026-CSE-0417') })
+    if (!demo || !demo.publicJws) {
+      if (demo) await tx.delete(t.credentials).where(eq(t.credentials.certNo, 'GTU-2026-CSE-0417'))
+      await tx.insert(t.counters).values({ name: `status:${GTU_DID}`, value: 416 }).onConflictDoNothing()
+      await issueCredential(tx, {
+        issuerDid: GTU_DID, certNo: 'GTU-2026-CSE-0417', apaar: STUDENT_APAAR, holderName: 'Ritika Deshmukh', studentId: 'GTU/2022/CSE/0417',
+        programmeCode: 'CSE', degree: 'B.Tech, Computer Science & Engineering', year: 2026, cgpa: '8.42', division: 'First Class with Distinction',
+        issuedAt: '2026-07-15T10:00:00+05:30',
+      }, 'registrar@godavaritu.edu.in')
+      done.push('demo-degree')
+    }
+  })
+  return { upgraded: done }
 }

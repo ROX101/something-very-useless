@@ -3,8 +3,6 @@ import { PortalShell } from '../ui/PortalShell'
 import { useSync } from '../useSync'
 import { useConsent } from '../verify/consent'
 
-export const VERIFIER = { name: 'Kabir Menon', org: 'Tarang Software Pvt. Ltd.' }
-
 export function VerifierLayout({ children }: { children: ReactNode }) {
   useSync(useConsent((s) => s.hydrate), 4000)
   return (

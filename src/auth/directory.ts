@@ -6,6 +6,8 @@ export type Role =
   | 'inst_operator'
   | 'student'
   | 'verifier'
+  | 'university'
+  | 'regulator'
 
 export interface Account {
   userId: string
@@ -26,6 +28,8 @@ export const ROLE_LABEL: Record<Role, string> = {
   inst_operator: 'Data Operator',
   student: 'Student',
   verifier: 'Registered Verifier',
+  university: 'University Registrar (Degree-awarding body)',
+  regulator: 'Regulatory Body Officer',
 }
 
 export const ROLE_HOME: Record<Role, string> = {
@@ -36,6 +40,8 @@ export const ROLE_HOME: Record<Role, string> = {
   inst_operator: '/inst',
   student: '/student',
   verifier: '/verify',
+  university: '/university',
+  regulator: '/regulator',
 }
 
 export const DEMO_PASSWORD = 'Demo@2026'
@@ -55,6 +61,10 @@ export const ACCOUNTS: Account[] = [
     org: 'APAAR 4471 2093 6618', scope: 'Own records' },
   { userId: 'kabir.menon@tarangsoftware.in', name: 'Kabir Menon', role: 'verifier',
     org: 'Tarang Software Pvt. Ltd.', scope: 'Consented verifications' },
+  { userId: 'registrar@godavaritu.edu.in', name: 'Dr. Anjali Kulkarni', role: 'university',
+    org: 'Godavari Technological University', scope: 'Affiliated institutions, degree issuance' },
+  { userId: 'assessor@naac.gov.in', name: 'Prof. R. Venkatesh', role: 'regulator',
+    org: 'National Assessment and Accreditation Council (NAAC)', scope: 'Statutory access, logged' },
 ]
 
 export function normaliseUserId(raw: string): string {

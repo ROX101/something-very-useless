@@ -1,7 +1,7 @@
 import path from 'node:path'
 import { createApp } from './app'
 import { createDb, createPool, runMigrations } from './db/client'
-import { seed } from './db/seed'
+import { seed, upgradeSeed } from './db/seed'
 import { env } from './env'
 
 async function main() {
@@ -13,6 +13,8 @@ async function main() {
   if (env.seedOnBoot) {
     const r = await seed(db)
     console.log(r.seeded ? '[db] demo data seeded' : '[db] demo data already present')
+    const u = await upgradeSeed(db)
+    if (u.upgraded.length) console.log(`[db] demo data upgraded: ${u.upgraded.join(', ')}`)
   }
 
   const staticDir = process.env.STATIC_DIR ?? path.resolve(process.cwd(), 'dist')

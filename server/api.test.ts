@@ -8,6 +8,7 @@ import { seed } from './db/seed'
 import { auditLog, complianceAlerts, enrolments, institutions, users } from './db/schema'
 import { canonical, type TrailEntry } from './lib/audit'
 import { createHash } from 'node:crypto'
+import { decodeJwt } from 'jose'
 import { readFileSync } from 'node:fs'
 import { generateDataset } from '../src/inst/data/generate'
 import { applyAllFixes } from '../src/inst/engine/rules'
@@ -45,7 +46,7 @@ describe('health', () => {
 describe('seed', () => {
   it('loads the demo logins and reference data but no activity', async () => {
     const count = async (table: string) => (await db.execute<{ n: number }>(sql.raw(`select count(*)::int as n from ${table}`))).rows[0].n
-    expect(await count('users')).toBe(7)
+    expect(await count('users')).toBe(9)
     expect(await count('institutions')).toBe(1)
     expect(await count('programmes')).toBe(5)
     for (const t of ['compliance_alerts', 'verification_requests', 'access_log', 'enrolments', 'submissions', 'uploads', 'alert_actions']) {
@@ -446,7 +447,9 @@ describe('public', () => {
   it('serves a certificate by number', async () => {
     const r = await request(app).get('/api/public/certificates/GTU-2026-CSE-0417')
     expect(r.status).toBe(200)
-    expect(r.body).toMatchObject({ certNo: 'GTU-2026-CSE-0417', revoked: false })
+    expect(r.body).toMatchObject({ certNo: 'GTU-2026-CSE-0417', issuer: { name: 'Godavari Technological University' } })
+    // the public summary never carries marks
+    expect(JSON.stringify(decodeJwt(r.body.jws))).not.toMatch(/cgpa|8\.42|div/)
     expect((await request(app).get('/api/public/certificates/NOPE')).status).toBe(404)
   })
 

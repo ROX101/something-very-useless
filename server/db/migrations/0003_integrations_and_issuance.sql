@@ -19,5 +19,47 @@ CREATE TABLE "idempotency" (
 	CONSTRAINT "idempotency_api_key_id_key_pk" PRIMARY KEY("api_key_id","key")
 );
 --> statement-breakpoint
+CREATE TABLE "issuers" (
+	"did" text PRIMARY KEY NOT NULL,
+	"name" text NOT NULL,
+	"short" varchar(12) NOT NULL,
+	"city" text DEFAULT '' NOT NULL,
+	"kid" varchar(40) NOT NULL,
+	"public_jwk" jsonb NOT NULL,
+	"private_jwk_enc" text NOT NULL,
+	"status" varchar(12) DEFAULT 'registered' NOT NULL,
+	"created_at" timestamp with time zone DEFAULT now() NOT NULL,
+	CONSTRAINT "issuers_kid_unique" UNIQUE("kid")
+);
+--> statement-breakpoint
+ALTER TABLE "enrolments" ALTER COLUMN "apaar" DROP NOT NULL;--> statement-breakpoint
+ALTER TABLE "credentials" ADD COLUMN "public_jws" text;--> statement-breakpoint
+ALTER TABLE "credentials" ADD COLUMN "revoked_at" timestamp with time zone;--> statement-breakpoint
+ALTER TABLE "credentials" ADD COLUMN "issuer_did" text;--> statement-breakpoint
+ALTER TABLE "credentials" ADD COLUMN "status_index" integer;--> statement-breakpoint
+ALTER TABLE "credentials" ADD COLUMN "holder_name" text;--> statement-breakpoint
+ALTER TABLE "credentials" ADD COLUMN "student_id" text;--> statement-breakpoint
+ALTER TABLE "credentials" ADD COLUMN "programme_code" varchar(16);--> statement-breakpoint
+ALTER TABLE "credentials" ADD COLUMN "degree" text;--> statement-breakpoint
+ALTER TABLE "credentials" ADD COLUMN "year" integer;--> statement-breakpoint
+ALTER TABLE "credentials" ADD COLUMN "cgpa" varchar(8);--> statement-breakpoint
+ALTER TABLE "credentials" ADD COLUMN "division" text;--> statement-breakpoint
+ALTER TABLE "credentials" ADD COLUMN "institution_pid" varchar(20);--> statement-breakpoint
+ALTER TABLE "credentials" ADD COLUMN "issued_by" text;--> statement-breakpoint
+ALTER TABLE "enrolments" ADD COLUMN "inst_student_id" text;--> statement-breakpoint
+ALTER TABLE "enrolments" ADD COLUMN "name" text;--> statement-breakpoint
+ALTER TABLE "enrolments" ADD COLUMN "name_key" text;--> statement-breakpoint
+ALTER TABLE "enrolments" ADD COLUMN "dob" date;--> statement-breakpoint
+ALTER TABLE "enrolments" ADD COLUMN "gender" char(1);--> statement-breakpoint
+ALTER TABLE "enrolments" ADD COLUMN "category" varchar(12);--> statement-breakpoint
+ALTER TABLE "enrolments" ADD COLUMN "quota" varchar(16);--> statement-breakpoint
+ALTER TABLE "enrolments" ADD COLUMN "status" varchar(12) DEFAULT 'active' NOT NULL;--> statement-breakpoint
+ALTER TABLE "enrolments" ADD COLUMN "status_date" date;--> statement-breakpoint
+ALTER TABLE "enrolments" ADD COLUMN "status_note" text;--> statement-breakpoint
+ALTER TABLE "institutions" ADD COLUMN "awarding_did" text;--> statement-breakpoint
 ALTER TABLE "programmes" ADD COLUMN "last_year_admitted" integer;--> statement-breakpoint
-ALTER TABLE "api_keys" ADD CONSTRAINT "api_keys_institution_pid_institutions_pid_fk" FOREIGN KEY ("institution_pid") REFERENCES "public"."institutions"("pid") ON DELETE no action ON UPDATE no action;
+ALTER TABLE "users" ADD COLUMN "issuer_did" text;--> statement-breakpoint
+ALTER TABLE "verification_requests" ADD COLUMN "fields" text[] DEFAULT '{"basic"}' NOT NULL;--> statement-breakpoint
+ALTER TABLE "api_keys" ADD CONSTRAINT "api_keys_institution_pid_institutions_pid_fk" FOREIGN KEY ("institution_pid") REFERENCES "public"."institutions"("pid") ON DELETE no action ON UPDATE no action;--> statement-breakpoint
+CREATE UNIQUE INDEX "credentials_status_idx" ON "credentials" USING btree ("issuer_did","status_index");--> statement-breakpoint
+CREATE INDEX "enrolments_person_idx" ON "enrolments" USING btree ("name_key","dob");

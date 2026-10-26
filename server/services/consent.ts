@@ -20,7 +20,7 @@ export async function expireStale(db: Db) {
 
 export const toClient = (r: Request) => ({
   id: r.id, apaar: r.apaar, verifier: r.verifier, verifierOrg: r.verifierOrg, purpose: r.purpose, reference: r.reference,
-  validityDays: r.validityDays, retentionDays: r.retentionDays, createdAt: r.createdAt, status: r.status,
+  validityDays: r.validityDays, retentionDays: r.retentionDays, fields: r.fields, createdAt: r.createdAt, status: r.status,
   decidedAt: r.decidedAt ?? undefined, consentNo: r.consentNo ?? undefined, expiresAt: r.expiresAt ?? undefined,
 })
 

@@ -19,6 +19,7 @@ export interface SessionUser {
   institutionPid: string | null
   apaar: string | null
   states: string[]
+  issuerDid: string | null
 }
 
 declare global {
@@ -57,7 +58,7 @@ export function clearSessionCookie(res: Response) {
 export function toSessionUser(u: typeof users.$inferSelect): SessionUser {
   return {
     userId: u.userId, name: u.name, role: u.role as Role, org: u.org, scope: u.scope,
-    institutionPid: u.institutionPid, apaar: u.apaar, states: u.states,
+    institutionPid: u.institutionPid, apaar: u.apaar, states: u.states, issuerDid: u.issuerDid,
   }
 }
 

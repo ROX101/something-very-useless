@@ -4,6 +4,7 @@ import { and, desc, eq } from 'drizzle-orm'
 import { z } from 'zod'
 import { COLUMNS, type UploadRow } from '../../src/inst/engine/types'
 import { runRules } from '../../src/inst/engine/rules'
+import { normaliseName } from '../../src/inst/engine/similarity'
 import { apiKeys, complianceAlerts, enrolments, institutions, programmes, submissions, uploads } from '../db/schema'
 import { createKey, toPublicKey } from '../lib/apikeys'
 import { audit } from '../lib/audit'
@@ -176,16 +177,25 @@ export function instRoutes() {
         })))
       }
 
-      // Publish this institution's enrolments so other institutions' uploads can detect cross-enrolment (R10).
+      // Publish this institution's roster to the national enrolment register. Other institutions' uploads are
+      // checked against it (R10 by APAAR ID; probable duplicates by name + DOB, including students without an APAAR ID).
       await tx.delete(enrolments).where(and(eq(enrolments.institutionPid, pid), eq(enrolments.ay, AY)))
-      const live = [...new Map(u.rows
-        .map((row) => ({ apaar: row.APAAR_ID.replace(/\s/g, ''), programme: row.PROGRAMME }))
-        .filter((e) => /^\d{12}$/.test(e.apaar))
-        .map((e) => [e.apaar, e])).values()]
-      for (let i = 0; i < live.length; i += 1000) {
-        await tx.insert(enrolments).values(live.slice(i, i + 1000).map((e) => ({
-          apaar: e.apaar, institutionPid: pid, institution: inst.name, city: inst.city, ay: AY, programme: e.programme, submissionReceipt: receiptNo,
-        }))).onConflictDoNothing()
+      const seen = new Set<string>()
+      const roster = u.rows.flatMap((row) => {
+        const apaar = row.APAAR_ID.replace(/\s/g, '')
+        const valid = /^\d{12}$/.test(apaar)
+        const key = valid ? `a:${apaar}` : `s:${row.INST_STUDENT_ID}`
+        if (seen.has(key)) return []
+        seen.add(key)
+        return [{
+          apaar: valid ? apaar : null, institutionPid: pid, institution: inst.name, city: inst.city, ay: AY, programme: row.PROGRAMME,
+          submissionReceipt: receiptNo, instStudentId: row.INST_STUDENT_ID, name: row.NAME, nameKey: normaliseName(row.NAME),
+          dob: /^\d{4}-\d{2}-\d{2}$/.test(row.DOB) ? row.DOB : null, gender: row.GENDER.slice(0, 1) || null,
+          category: row.CATEGORY.slice(0, 12) || null, quota: row.QUOTA.slice(0, 16) || null,
+        }]
+      })
+      for (let i = 0; i < roster.length; i += 1000) {
+        await tx.insert(enrolments).values(roster.slice(i, i + 1000)).onConflictDoNothing()
       }
 
       await audit(tx, req.user!, {

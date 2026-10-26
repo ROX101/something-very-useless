@@ -5,6 +5,8 @@ import { ROLE_LABEL, type Role } from '../auth/directory'
 interface Module { title: string; body: string }
 
 const MODULES: Record<Role, { headline: string; modules: Module[] }> = {
+  university: { headline: 'Degree-awarding body', modules: [{ title: 'Students', body: 'Verified APAAR IDs of students at affiliated institutions.' }, { title: 'Credentials', body: 'Issue and revoke signed degree certificates.' }] },
+  regulator: { headline: 'Statutory access', modules: [{ title: 'Institution records', body: 'Look up an institution\'s submitted students under a recorded legal basis.' }] },
   aicte_bureau: {
     headline: 'National monitoring',
     modules: [

@@ -1,5 +1,6 @@
 import { useState, type FormEvent } from 'react'
-import { VERIFIER, VerifierLayout } from '../VerifierLayout'
+import { VerifierLayout } from '../VerifierLayout'
+import { useApp } from '../../store'
 import { PageTitle, Panel, btn, formatDate, maskApaar, td, th } from '../../inst/ui/bits'
 import { PURPOSES, RETENTION, SHARED_FIELDS, useConsent } from '../../verify/consent'
 
@@ -7,7 +8,9 @@ const input = 'h-11 w-full rounded border border-line bg-white px-3 text-[0.9375
 
 export default function Requests() {
   const { requests, request } = useConsent()
-  const mine = requests.filter((r) => r.verifierOrg === VERIFIER.org)
+  const org = useApp((st) => st.account?.org ?? '')
+  const mine = requests.filter((r) => r.verifierOrg === org)
+  const [wantMarks, setWantMarks] = useState(false)
   const [apaar, setApaar] = useState('')
   const [purposeId, setPurposeId] = useState<string>(PURPOSES[0].id)
   const [reference, setReference] = useState('')
@@ -27,7 +30,7 @@ export default function Requests() {
     setRefErr(noRef ? `Enter the ${purpose.reference.toLowerCase()}.` : '')
     if (bad || noRef) return
     try {
-      await request({ apaar: d, purpose: purpose.label, reference: `${purpose.reference.replace(' number', '')} ${reference.trim()}`, validityDays: days, retentionDays: keep })
+      await request({ apaar: d, purpose: purpose.label, reference: `${purpose.reference.replace(' number', '')} ${reference.trim()}`, validityDays: days, retentionDays: keep, fields: wantMarks ? ['basic', 'marks'] : ['basic'] })
       setApaar('')
       setReference('')
       setSent(true)
@@ -67,7 +70,11 @@ export default function Requests() {
                 {RETENTION.map((d) => <option key={d} value={d}>{d} days, then delete</option>)}
               </select>
             </label>
-            <p className="text-sm text-muted">You will see: {SHARED_FIELDS.join(', ').toLowerCase()}. Marks, category, address and date of birth are never shared.</p>
+            <label className="flex items-center gap-2 text-sm text-ink">
+              <input type="checkbox" checked={wantMarks} onChange={(e) => setWantMarks(e.target.checked)} className="h-4 w-4 accent-navy" />
+              Also ask to see marks (CGPA and division)
+            </label>
+            <p className="text-sm text-muted">You will see: {SHARED_FIELDS.join(', ').toLowerCase()}{wantMarks ? ', and marks if the student agrees' : ''}. Category, address and date of birth are never shared.</p>
             <button type="submit" className={btn.primary}>Send request</button>
             {sent && <p role="status" className="border-l-4 border-ok bg-ok-bg px-4 py-2 text-sm">Request sent. The student will see it in their account.</p>}
           </form>
@@ -81,7 +88,7 @@ export default function Requests() {
                 {mine.map((r) => (
                   <tr key={r.id}>
                     <td className={`${td} whitespace-nowrap font-mono text-sm`}>{maskApaar(r.apaar)}</td>
-                    <td className={td}>{r.purpose}{r.reference && <p className="text-sm text-muted">{r.reference}</p>}</td>
+                    <td className={td}>{r.purpose}{r.reference && <p className="text-sm text-muted">{r.reference}</p>}{r.fields?.includes('marks') && <p className="text-xs font-semibold text-muted">Marks requested</p>}</td>
                     <td className={`${td} whitespace-nowrap text-sm text-muted`}>{formatDate(r.createdAt)}</td>
                     <td className={td}>
                       <span className={`font-semibold ${r.status === 'Approved' ? 'text-ok' : r.status === 'Pending' ? 'text-warn' : 'text-muted'}`}>{r.status}</span>

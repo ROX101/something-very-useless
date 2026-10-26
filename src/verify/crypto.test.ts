@@ -19,3 +19,13 @@ describe('certificate QR verification', () => {
     expect((await verifyCredential('hello')).ok).toBe(false)
   })
 })
+
+describe('reading what a QR holds', () => {
+  it('recognises a certificate link, a bare number and a token', async () => {
+    const { readCode } = await import('./crypto')
+    expect(readCode('https://apaar.example.in/c/GTU-2026-CSE-0417')).toEqual({ kind: 'link', certNo: 'GTU-2026-CSE-0417' })
+    expect(readCode('gtu-2026-cse-0417')).toEqual({ kind: 'link', certNo: 'GTU-2026-CSE-0417' })
+    expect(readCode(GENUINE_JWS)?.kind).toBe('token')
+    expect(readCode('hello')).toBeNull()
+  })
+})

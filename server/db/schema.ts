@@ -16,6 +16,24 @@ export const institutions = pgTable('institutions', {
   established: integer('established'),
   approval: text('approval'),
   motto: text('motto'),
+  /** The university (degree-awarding body) this institution is affiliated to; null for autonomous bodies not yet onboarded. */
+  awardingDid: text('awarding_did'),
+})
+
+/**
+ * Degree-awarding bodies registered as credential issuers. The private signing key is stored encrypted
+ * (AES-256-GCM with SIGNING_KEY_SECRET); in production this would live in an HSM.
+ */
+export const issuers = pgTable('issuers', {
+  did: text('did').primaryKey(),
+  name: text('name').notNull(),
+  short: varchar('short', { length: 12 }).notNull(),
+  city: text('city').notNull().default(''),
+  kid: varchar('kid', { length: 40 }).notNull().unique(),
+  publicJwk: jsonb('public_jwk').$type<Record<string, string>>().notNull(),
+  privateJwkEnc: text('private_jwk_enc').notNull(),
+  status: varchar('status', { length: 12 }).notNull().default('registered'),
+  createdAt: ts('created_at').notNull().defaultNow(),
 })
 
 export const programmes = pgTable('programmes', {
@@ -38,6 +56,8 @@ export const users = pgTable('users', {
   institutionPid: varchar('institution_pid', { length: 20 }).references(() => institutions.pid),
   apaar: char('apaar', { length: 12 }),
   states: text('states').array().notNull().default([]),
+  /** For university registrars: the issuer they act for. */
+  issuerDid: text('issuer_did'),
   active: boolean('active').notNull().default(true),
   createdAt: ts('created_at').notNull().defaultNow(),
   lastLoginAt: ts('last_login_at'),
@@ -50,17 +70,34 @@ export const apaarRegistry = pgTable('apaar_registry', {
   gender: char('gender', { length: 1 }).notNull(),
 })
 
+/**
+ * The national enrolment register: one row per student per institution per academic year, from submissions.
+ * apaar is null for students with an exception code (they can still be matched by name + DOB).
+ */
 export const enrolments = pgTable('enrolments', {
   id: bigserial('id', { mode: 'number' }).primaryKey(),
-  apaar: char('apaar', { length: 12 }).notNull(),
+  apaar: char('apaar', { length: 12 }),
   institutionPid: varchar('institution_pid', { length: 20 }).notNull(),
   institution: text('institution').notNull(),
   city: text('city').notNull(),
   ay: varchar('ay', { length: 7 }).notNull(),
   programme: text('programme'),
   submissionReceipt: text('submission_receipt'),
+  instStudentId: text('inst_student_id'),
+  name: text('name'),
+  /** Normalised name used for probable-duplicate matching. */
+  nameKey: text('name_key'),
+  dob: date('dob', { mode: 'string' }),
+  gender: char('gender', { length: 1 }),
+  category: varchar('category', { length: 12 }),
+  quota: varchar('quota', { length: 16 }),
+  /** active | withdrawn | transferred */
+  status: varchar('status', { length: 12 }).notNull().default('active'),
+  statusDate: date('status_date', { mode: 'string' }),
+  statusNote: text('status_note'),
 }, (t) => [
   index('enrolments_apaar_idx').on(t.apaar),
+  index('enrolments_person_idx').on(t.nameKey, t.dob),
   uniqueIndex('enrolments_unique').on(t.apaar, t.institutionPid, t.ay),
 ])
 
@@ -134,6 +171,8 @@ export const verificationRequests = pgTable('verification_requests', {
   reference: text('reference').notNull().default(''),
   validityDays: integer('validity_days').notNull(),
   retentionDays: integer('retention_days').notNull().default(30),
+  /** What the verifier asks to see: 'basic' (name, degree, year, status) and optionally 'marks' (CGPA, division). */
+  fields: text('fields').array().notNull().default(['basic']),
   createdAt: ts('created_at').notNull().defaultNow(),
   status: varchar('status', { length: 12 }).notNull().default('Pending'),
   decidedAt: ts('decided_at'),
@@ -171,14 +210,31 @@ export const auditLog = pgTable('audit_log', {
   hash: char('hash', { length: 64 }).notNull(),
 })
 
+/**
+ * Issued credentials. jws is the full signed credential (with marks) for the holder, the issuer and consented
+ * verifiers; publicJws is a signed subset (no marks) that anyone holding the certificate can check via the QR link.
+ */
 export const credentials = pgTable('credentials', {
   certNo: text('cert_no').primaryKey(),
   apaar: char('apaar', { length: 12 }).notNull(),
   jws: text('jws').notNull(),
+  publicJws: text('public_jws'),
   issuedAt: ts('issued_at').notNull().defaultNow(),
   revoked: boolean('revoked').notNull().default(false),
   revokedReason: text('revoked_reason'),
-})
+  revokedAt: ts('revoked_at'),
+  issuerDid: text('issuer_did'),
+  statusIndex: integer('status_index'),
+  holderName: text('holder_name'),
+  studentId: text('student_id'),
+  programmeCode: varchar('programme_code', { length: 16 }),
+  degree: text('degree'),
+  year: integer('year'),
+  cgpa: varchar('cgpa', { length: 8 }),
+  division: text('division'),
+  institutionPid: varchar('institution_pid', { length: 20 }),
+  issuedBy: text('issued_by'),
+}, (t) => [uniqueIndex('credentials_status_idx').on(t.issuerDid, t.statusIndex)])
 
 /** Sign-up requests from the public Register page, reviewed by AICTE before an account is created. */
 export const registrations = pgTable('registrations', {

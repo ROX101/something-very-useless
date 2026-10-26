@@ -16,6 +16,8 @@ import { verifierRoutes } from './routes/verifier'
 import { publicRoutes } from './routes/public'
 import { auditRoutes } from './routes/audit'
 import { v1Routes } from './routes/v1'
+import { universityRoutes } from './routes/university'
+import { credentialRoutes } from './routes/credentials'
 import { openapi } from './openapi'
 
 export interface AppOptions {
@@ -67,6 +69,8 @@ export function createApp({ db, staticDir, loginLimit }: AppOptions) {
   api.use('/verifier', verifierRoutes())
   api.use('/public', publicRoutes())
   api.use('/audit', auditRoutes())
+  api.use('/university', universityRoutes())
+  api.use('/credentials', credentialRoutes())
   api.use((_req, _res, next) => next(notFound('No such API route')))
   api.use(errorHandler)
   app.use('/api', api)

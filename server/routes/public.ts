@@ -2,7 +2,8 @@ import { Router } from 'express'
 import rateLimit from 'express-rate-limit'
 import { eq } from 'drizzle-orm'
 import { z } from 'zod'
-import { credentials, registrations } from '../db/schema'
+import { credentials, issuers, registrations } from '../db/schema'
+import { statusListJws } from '../services/credentials'
 import { PUBLIC, audit, maskApaar } from '../lib/audit'
 import { next } from '../lib/counters'
 import { handler, notFound, parse } from '../lib/http'
@@ -24,10 +25,32 @@ const Registration = z.discriminatedUnion('kind', [
 /** Unauthenticated endpoints: certificate lookup, revocation status, and sign-up requests. */
 export function publicRoutes() {
   const r = Router()
-  r.get('/certificates/:certNo', handler(async (req, res) => {
+  /** Trust registry: the degree-awarding bodies whose signatures this platform accepts, with their public keys. */
+  r.get('/issuers', handler(async (req, res) => {
+    const rows = await req.db.select().from(issuers)
+    res.setHeader('Cache-Control', 'public, max-age=300')
+    res.json(rows.map((i) => ({ did: i.did, name: i.name, short: i.short, kid: i.kid, status: i.status, jwk: { ...i.publicJwk, kid: i.kid } })))
+  }))
+
+  /**
+   * What the QR on a certificate points to. Returns only the signed public summary (name, APAAR ID, degree, year):
+   * marks are never in it. The browser checks the signature against the registry and the status list itself.
+   */
+  const publicCert = handler(async (req, res) => {
     const c = await req.db.query.credentials.findFirst({ where: eq(credentials.certNo, req.params.certNo) })
-    if (!c) throw notFound('No certificate with this number')
-    res.json({ certNo: c.certNo, jws: c.jws, issuedAt: c.issuedAt, revoked: c.revoked, revokedReason: c.revokedReason })
+    if (!c || !c.publicJws) throw notFound('No certificate with this number')
+    const issuer = c.issuerDid ? await req.db.query.issuers.findFirst({ where: eq(issuers.did, c.issuerDid) }) : null
+    res.json({ certNo: c.certNo, jws: c.publicJws, issuedAt: c.issuedAt, issuer: issuer && { did: issuer.did, name: issuer.name } })
+  })
+  r.get('/c/:certNo', publicCert)
+  r.get('/certificates/:certNo', publicCert)
+
+  /** W3C Bitstring Status List credential for an issuer (revocation). */
+  r.get('/status/:short', handler(async (req, res) => {
+    const jws = await statusListJws(req.db, req.params.short)
+    if (!jws) throw notFound('No such issuer')
+    res.setHeader('Cache-Control', 'public, max-age=60')
+    res.json({ jws })
   }))
 
   const signupLimit = rateLimit({ windowMs: 60 * 60 * 1000, limit: 10, standardHeaders: 'draft-7', legacyHeaders: false,

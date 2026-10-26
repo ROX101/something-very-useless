@@ -26,6 +26,8 @@ export interface VerificationRequest {
   reference: string
   validityDays: number
   retentionDays: number
+  /** 'basic' always; 'marks' if the verifier asked for CGPA and division. */
+  fields?: string[]
   createdAt: string
   status: RequestStatus
   decidedAt?: string
@@ -49,6 +51,9 @@ export interface SharedRecord {
   year: number | null
   status: string
   certNo: string | null
+  cgpa?: string | null
+  division?: string | null
+  fields: string[]
 }
 
 interface ConsentState {
@@ -108,7 +113,7 @@ export const useConsent = create<ConsentState>((set, get) => ({
 
   request: async (r) => {
     const created = await api.post<VerificationRequest>('/verifier/requests', {
-      apaar: r.apaar, purpose: r.purpose, reference: r.reference, validityDays: r.validityDays, retentionDays: r.retentionDays,
+      apaar: r.apaar, purpose: r.purpose, reference: r.reference, validityDays: r.validityDays, retentionDays: r.retentionDays, fields: r.fields,
     })
     set({ requests: [created, ...get().requests], error: null })
   },

@@ -20,7 +20,7 @@ export async function buildContext(db: Db, institutionPid: string, rows: UploadR
       ))
       : Promise.resolve([]),
     apaars.length
-      ? db.select().from(enrolments).where(and(inArray(enrolments.apaar, apaars), ne(enrolments.institutionPid, institutionPid)))
+      ? db.select().from(enrolments).where(and(inArray(enrolments.apaar, apaars), ne(enrolments.institutionPid, institutionPid), eq(enrolments.status, 'active')))
       : Promise.resolve([]),
   ])
 
@@ -28,7 +28,7 @@ export async function buildContext(db: Db, institutionPid: string, rows: UploadR
     institutionPid,
     programmes: progs.map((p) => ({ code: p.code, label: p.label, name: p.name, intake: p.intake })),
     registry: registry.map((e) => ({ apaar: e.apaar, name: e.name, dob: e.dob, gender: e.gender })),
-    otherEnrolments: others.map((e) => ({ apaar: e.apaar, pid: e.institutionPid, institution: e.institution, city: e.city, ay: e.ay })),
+    otherEnrolments: others.filter((e) => e.apaar).map((e) => ({ apaar: e.apaar!, pid: e.institutionPid, institution: e.institution, city: e.city, ay: e.ay })),
   }
 }
 

@@ -21,6 +21,9 @@ import StudentLog from './student/pages/Log'
 import VerifierVerify from './verifier/pages/Verify'
 import VerifierRequests from './verifier/pages/Requests'
 import Certificate from './pages/Certificate'
+import PublicVerify from './pages/PublicVerify'
+import UniversityStudents from './university/pages/Students'
+import UniversityCredentials from './university/pages/Credentials'
 import AuditTrail from './aicte/pages/AuditTrail'
 
 const INST: Role[] = ['inst_admin', 'inst_operator']
@@ -80,7 +83,10 @@ export default function App() {
       <Route path="/student/log" element={<RequireRole roles={['student']}><StudentLog /></RequireRole>} />
       <Route path="/verify" element={<RequireRole roles={['verifier']}><VerifierVerify /></RequireRole>} />
       <Route path="/verify/requests" element={<RequireRole roles={['verifier']}><VerifierRequests /></RequireRole>} />
+      <Route path="/university" element={<RequireRole roles={['university']}><UniversityStudents /></RequireRole>} />
+      <Route path="/university/credentials" element={<RequireRole roles={['university']}><UniversityCredentials /></RequireRole>} />
       <Route path="/certificate/:id" element={<Certificate />} />
+      <Route path="/c/:certNo" element={<PublicVerify />} />
 
       <Route path="*" element={<Navigate to="/" replace />} />
     </Routes>

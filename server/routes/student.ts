@@ -1,7 +1,7 @@
 import { Router } from 'express'
 import { and, desc, eq } from 'drizzle-orm'
 import { z } from 'zod'
-import { accessLog, apaarRegistry, credentials, verificationRequests } from '../db/schema'
+import { accessLog, apaarRegistry, credentials, enrolments, verificationRequests } from '../db/schema'
 import { audit } from '../lib/audit'
 import { requireRole } from '../lib/auth'
 import { next } from '../lib/counters'
@@ -26,9 +26,12 @@ export function studentRoutes() {
     const apaar = apaarOf(req)
     const [reg, certs] = await Promise.all([
       req.db.query.apaarRegistry.findFirst({ where: eq(apaarRegistry.apaar, apaar) }),
-      req.db.select({ certNo: credentials.certNo, issuedAt: credentials.issuedAt, revoked: credentials.revoked }).from(credentials).where(eq(credentials.apaar, apaar)),
+      req.db.select({ certNo: credentials.certNo, issuedAt: credentials.issuedAt, revoked: credentials.revoked, degree: credentials.degree, year: credentials.year, studentId: credentials.studentId })
+        .from(credentials).where(eq(credentials.apaar, apaar)),
     ])
-    res.json({ apaar, name: reg?.name ?? req.user!.name, gender: reg?.gender, credentials: certs })
+    const enrol = await req.db.select({ ay: enrolments.ay, institution: enrolments.institution, city: enrolments.city, programme: enrolments.programme, status: enrolments.status, statusDate: enrolments.statusDate, receipt: enrolments.submissionReceipt })
+      .from(enrolments).where(eq(enrolments.apaar, apaar)).orderBy(desc(enrolments.ay))
+    res.json({ apaar, name: reg?.name ?? req.user!.name, gender: reg?.gender, credentials: certs, enrolments: enrol })
   }))
 
   r.get('/requests', handler(async (req, res) => {
