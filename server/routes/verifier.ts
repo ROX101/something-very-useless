@@ -7,7 +7,7 @@ import { audit, maskApaar } from '../lib/audit'
 import { requireRole } from '../lib/auth'
 import { next } from '../lib/counters'
 import { badRequest, conflict, handler, notFound, parse } from '../lib/http'
-import { activeConsent, expireStale, log, toClient } from '../services/consent'
+import { activeConsent, expireStale, log, retention, toClient } from '../services/consent'
 
 const NewRequest = z.object({
   apaar: z.string().transform((s) => s.replace(/\s/g, '')).pipe(z.string().regex(/^\d{12}$/, 'Enter a 12-digit APAAR ID')),
@@ -71,6 +71,11 @@ export function verifierRoutes() {
     const subject = cred ? ((decodeJwt(cred.jws).vc as { credentialSubject?: Subject } | undefined)?.credentialSubject ?? {}) : {}
     const marks = consent.fields.includes('marks')
 
+    if (!consent.firstViewedAt) {
+      const now = new Date()
+      await req.db.update(verificationRequests).set({ firstViewedAt: now.toISOString(), eraseBy: new Date(now.getTime() + consent.retentionDays * 86400000).toISOString() })
+        .where(eq(verificationRequests.id, consent.id))
+    }
     await log(req.db, apaar, req.user!.org, `Viewed your degree status (${consent.consentNo})`)
     await audit(req.db, req.user!, { category: 'Verification', action: 'Viewed shared record', detail: `APAAR ${maskApaar(apaar)} under consent ${consent.consentNo}`, entity: 'student', entityId: apaar })
 
@@ -85,6 +90,24 @@ export function verifierRoutes() {
       fields: consent.fields,
       certNo: cred?.certNo ?? null,
     })
+  }))
+
+  /** The verifier confirms it has erased the data it received (DPDP s.8(7)). Shown to the student. */
+  r.post('/requests/:id/erased', handler(async (req, res) => {
+    const row = await req.db.query.verificationRequests.findFirst({ where: and(eq(verificationRequests.id, req.params.id), eq(verificationRequests.verifierOrg, req.user!.org)) })
+    if (!row) throw notFound('No such request')
+    if (!row.firstViewedAt) throw conflict('not_viewed', 'Nothing was received under this request, so there is nothing to erase')
+    if (row.erasedAt) throw conflict('already_erased', 'Erasure was already confirmed')
+    const now = new Date().toISOString()
+    const [u] = await req.db.transaction(async (tx) => {
+      // Erasing ends the purpose, so an active consent ends with it.
+      const out = await tx.update(verificationRequests).set({ erasedAt: now, ...(row.status === 'Approved' ? { status: 'Expired' } : {}) }).where(eq(verificationRequests.id, row.id)).returning()
+      const overdue = retention(row).eraseOverdue
+      await log(tx, row.apaar, req.user!.org, `Confirmed it erased your data received under ${row.consentNo}${overdue ? ' (after the deadline)' : ''}`)
+      await audit(tx, req.user!, { category: 'Consent', action: 'Confirmed erasure', detail: `${row.consentNo}, APAAR ${maskApaar(row.apaar)}${overdue ? ', overdue' : ''}`, entity: 'verification_request', entityId: row.id })
+      return out
+    })
+    res.json(toClient(u))
   }))
 
   return r

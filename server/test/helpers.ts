@@ -22,3 +22,10 @@ export async function setup() {
   }
   return { pool, db, app, login }
 }
+
+/** Gives consent the way the student does: request a one-time password, then approve with it (OTP_DEMO returns the code). */
+export async function approveWithOtp(agent: ReturnType<typeof request.agent>, id: string) {
+  const otp = await agent.post(`/api/student/requests/${id}/otp`)
+  expect(otp.status, JSON.stringify(otp.body)).toBe(201)
+  return agent.post(`/api/student/requests/${id}/decide`).send({ status: 'Approved', otp: otp.body.demoCode })
+}

@@ -3,7 +3,7 @@ import request from 'supertest'
 import { gunzipSync } from 'node:zlib'
 import { compactVerify, decodeJwt, importJWK, type JWK } from 'jose'
 import { sql } from 'drizzle-orm'
-import { setup } from './test/helpers'
+import { approveWithOtp, setup } from './test/helpers'
 import { generateDataset } from '../src/inst/data/generate'
 import { applyAllFixes, runRules } from '../src/inst/engine/rules'
 import { RULE_CONTEXT } from '../src/inst/data/dataset'
@@ -118,14 +118,14 @@ describe('consented marks', () => {
     const s = await ctx.login('447120936618')
     const basic = (await v.post('/api/verifier/requests').send({ apaar: '447120936618', purpose: 'Pre-employment background verification', reference: 'OL/1', validityDays: 7 })).body
     expect(basic.fields).toEqual(['basic'])
-    await s.post(`/api/student/requests/${basic.id}/decide`).send({ status: 'Approved' })
+    await approveWithOtp(s, basic.id)
     const r1 = (await v.get('/api/verifier/records/447120936618')).body
     expect(r1).not.toHaveProperty('cgpa')
     await s.post(`/api/student/requests/${basic.id}/revoke`)
 
     const marks = (await v.post('/api/verifier/requests').send({ apaar: '447120936618', purpose: 'Admission to a higher education programme', reference: 'PG-1', validityDays: 7, fields: ['marks'] })).body
     expect(marks.fields).toEqual(['basic', 'marks'])
-    await s.post(`/api/student/requests/${marks.id}/decide`).send({ status: 'Approved' })
+    await approveWithOtp(s, marks.id)
     const r2 = (await v.get('/api/verifier/records/447120936618')).body
     expect(r2).toMatchObject({ cgpa: '8.42', division: 'First Class with Distinction' })
   })

@@ -17,6 +17,8 @@ import { publicRoutes } from './routes/public'
 import { auditRoutes } from './routes/audit'
 import { v1Routes } from './routes/v1'
 import { universityRoutes } from './routes/university'
+import { regulatorRoutes } from './routes/regulator'
+import { onboardingRoutes } from './routes/onboarding'
 import { credentialRoutes } from './routes/credentials'
 import { openapi } from './openapi'
 
@@ -64,12 +66,14 @@ export function createApp({ db, staticDir, loginLimit }: AppOptions) {
   api.use(loadSession)
   api.use('/auth', authRoutes({ loginLimit }))
   api.use('/inst', instRoutes())
+  api.use('/aicte/registrations', onboardingRoutes())
   api.use('/aicte', aicteRoutes())
   api.use('/student', studentRoutes())
   api.use('/verifier', verifierRoutes())
   api.use('/public', publicRoutes())
   api.use('/audit', auditRoutes())
   api.use('/university', universityRoutes())
+  api.use('/regulator', regulatorRoutes())
   api.use('/credentials', credentialRoutes())
   api.use((_req, _res, next) => next(notFound('No such API route')))
   api.use(errorHandler)

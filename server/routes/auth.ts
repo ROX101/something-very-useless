@@ -10,6 +10,11 @@ import { clearSessionCookie, issueToken, publicAccount, requireAuth, setSessionC
 import { HttpError, handler, parse } from '../lib/http'
 
 const Login = z.object({ userId: z.string().min(1).max(200), password: z.string().min(1).max(200) })
+const ChangePassword = z.object({
+  current: z.string().min(1).max(200),
+  next: z.string().min(10, 'Use at least 10 characters').max(200)
+    .regex(/[A-Za-z]/, 'Include a letter').regex(/\d/, 'Include a number'),
+})
 
 // Precomputed hash so unknown users take as long as known ones (no user enumeration by timing).
 const DUMMY_HASH = bcrypt.hashSync('not-a-real-password', 10)
@@ -45,6 +50,18 @@ export function authRoutes({ loginLimit = 20 } = {}) {
     if (req.user) await audit(req.db, req.user, { category: 'Sign-in', action: 'Signed out', detail: req.user.userId, entity: 'user', entityId: req.user.userId })
     clearSessionCookie(res)
     res.status(204).end()
+  }))
+
+  r.post('/password', requireAuth, limiter, handler(async (req, res) => {
+    const b = parse(ChangePassword, req.body)
+    const u = await req.db.query.users.findFirst({ where: eq(users.userId, req.user!.userId) })
+    if (!u || !(await bcrypt.compare(b.current, u.passwordHash))) throw new HttpError(400, 'bad_password', 'Your current password is incorrect')
+    if (b.current === b.next) throw new HttpError(400, 'same_password', 'Choose a password different from the current one')
+    const [updated] = await req.db.update(users).set({ passwordHash: await bcrypt.hash(b.next, 10), mustChangePassword: false }).where(eq(users.userId, u.userId)).returning()
+    await audit(req.db, req.user!, { category: 'Sign-in', action: 'Changed password', detail: u.userId, entity: 'user', entityId: u.userId })
+    const session = toSessionUser(updated)
+    setSessionCookie(res, await issueToken(session))
+    res.json({ account: publicAccount(session) })
   }))
 
   r.get('/me', requireAuth, (req, res) => {

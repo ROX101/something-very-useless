@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react'
-import { STUDENT, StudentLayout } from '../StudentLayout'
+import { StudentLayout } from '../StudentLayout'
 import { PageTitle, Panel, btn, formatDate } from '../../inst/ui/bits'
-import { PRIVATE_FIELDS, SHARED_FIELDS, useConsent, type VerificationRequest } from '../../verify/consent'
+import { PRIVATE_FIELDS, SHARED_FIELDS, useConsent, type OtpSent, type VerificationRequest } from '../../verify/consent'
 
 const MARKS = 'Marks and CGPA'
 /** What this particular request would share, and what it would not. */
@@ -9,7 +9,7 @@ const sharedFor = (r: VerificationRequest) => (r.fields?.includes('marks') ? [..
 const privateFor = (r: VerificationRequest) => (r.fields?.includes('marks') ? PRIVATE_FIELDS.filter((f) => f !== MARKS) : PRIVATE_FIELDS)
 
 export default function Requests() {
-  const all = useConsent((s) => s.requests).filter((r) => r.apaar === STUDENT.apaar)
+  const all = useConsent((s) => s.requests)
   const pending = all.filter((r) => r.status === 'Pending')
   const past = all.filter((r) => r.status !== 'Pending')
   const [otpFor, setOtpFor] = useState<VerificationRequest | null>(null)
@@ -76,7 +76,7 @@ export default function Requests() {
             <div className="border-t border-line px-5 py-4">
               <div className="grid grid-cols-2 gap-3 sm:max-w-md">
                 <button className={btn.primary} onClick={() => setOtpFor(r)}>Allow</button>
-                <button className={btn.secondary} onClick={() => decide(r.id, 'Refused')}>Refuse</button>
+                <button className={btn.secondary} onClick={() => void decide(r.id, 'Refused').catch(() => undefined)}>Refuse</button>
               </div>
             </div>
             <p className="border-t border-line px-5 py-3 text-sm text-muted">Consent under the Digital Personal Data Protection Act, 2023. Refusing has no effect on your records.</p>
@@ -92,6 +92,8 @@ export default function Requests() {
                     <p className="font-medium">{r.verifierOrg}</p>
                     <p className="text-sm text-muted">{r.purpose}{r.reference && `, ${r.reference}`}</p>
                     <p className="text-sm text-muted">{formatDate(r.createdAt)}{r.consentNo && `, ${r.consentNo}`}</p>
+                    {r.erasedAt && <p className="text-sm text-ok">{r.verifierOrg} confirmed it erased your data on {formatDate(r.erasedAt)}</p>}
+                    {!r.erasedAt && r.eraseBy && <p className={`text-sm ${r.eraseOverdue ? 'font-semibold text-err' : 'text-muted'}`}>{r.eraseOverdue ? `Past its erasure date (${formatDate(r.eraseBy)}). You can complain to the Data Protection Board.` : `Must be erased by ${formatDate(r.eraseBy)}`}</p>}
                   </div>
                   <div className="flex items-center gap-4">
                     <span className={`text-sm font-semibold ${r.status === 'Approved' ? 'text-ok' : 'text-muted'}`}>{r.status}</span>
@@ -106,8 +108,9 @@ export default function Requests() {
 
       {otpFor && (
         <OtpDialog
+          request={otpFor}
           onCancel={() => setOtpFor(null)}
-          onConfirm={() => { decide(otpFor.id, 'Approved'); setJustApproved(otpFor.id); setOtpFor(null) }}
+          onDone={() => { setJustApproved(otpFor.id); setOtpFor(null) }}
         />
       )}
     </StudentLayout>
@@ -120,34 +123,51 @@ function Mark({ ok }: { ok?: boolean }) {
     : <svg className="h-4 w-4 shrink-0 text-muted" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="2" aria-label="not shared"><path d="M4 4l8 8M12 4l-8 8" /></svg>
 }
 
-function OtpDialog({ onCancel, onConfirm }: { onCancel: () => void; onConfirm: () => void }) {
-  const code = '482913'
-  const [typed, setTyped] = useState('')
-  useEffect(() => {
-    let i = 0
-    const id = window.setInterval(() => {
-      i++
-      setTyped(code.slice(0, i))
-      if (i >= code.length) window.clearInterval(id)
-    }, 110)
-    return () => window.clearInterval(id)
-  }, [])
+/** Sends a real one-time password to the registered mobile and approves only with the right code. */
+function OtpDialog({ request, onCancel, onDone }: { request: VerificationRequest; onCancel: () => void; onDone: () => void }) {
+  const { sendOtp, decide } = useConsent()
+  const [sent, setSent] = useState<OtpSent | null>(null)
+  const [code, setCode] = useState('')
+  const [err, setErr] = useState('')
+  const [busy, setBusy] = useState(false)
+
+  const send = () => {
+    setErr(''); setCode('')
+    sendOtp(request.id).then(setSent).catch((e: Error) => setErr(e.message))
+  }
+  useEffect(send, [request.id])
+
+  async function confirm() {
+    setBusy(true); setErr('')
+    try {
+      await decide(request.id, 'Approved', code)
+      onDone()
+    } catch (e) {
+      setErr((e as Error).message)
+    } finally {
+      setBusy(false)
+    }
+  }
+
   return (
     <div className="fixed inset-0 z-40 flex items-center justify-center p-4" role="dialog" aria-modal="true" aria-label="Confirm with OTP">
       <button className="absolute inset-0 bg-ink/40" onClick={onCancel} aria-label="Cancel" />
       <div className="relative w-full max-w-sm rounded border border-line bg-white p-6 shadow-xl">
         <h2 className="text-lg font-semibold text-ink">Confirm it’s you</h2>
-        <p className="mt-1 text-muted">Enter the 6-digit code sent to {STUDENT.mobile}.</p>
-        <div className="mt-4 flex gap-2" aria-label="One-time password">
-          {Array.from({ length: 6 }).map((_, i) => (
-            <span key={i} className={`flex h-12 w-10 items-center justify-center rounded border text-xl font-semibold tnum ${typed[i] ? 'border-navy' : 'border-line'}`}>{typed[i] ?? ''}</span>
-          ))}
-        </div>
-        <p className="mt-2 text-sm text-muted">Code read from SMS</p>
+        <p className="mt-1 text-muted">{sent ? `Enter the 6-digit code sent to ${sent.sentTo}. It is valid for 5 minutes.` : 'Sending a code to your registered mobile…'}</p>
+        <input
+          value={code} onChange={(e) => setCode(e.target.value.replace(/\D/g, '').slice(0, 6))}
+          inputMode="numeric" autoComplete="one-time-code" aria-label="One-time password" autoFocus
+          className="mt-4 h-12 w-full rounded border border-line px-3 text-center font-mono text-2xl tracking-[0.5em] focus:outline-none focus:ring-2 focus:ring-navy/30"
+          onKeyDown={(e) => { if (e.key === 'Enter' && code.length === 6) void confirm() }}
+        />
+        {sent?.demoCode && <p className="mt-2 rounded bg-page px-3 py-2 text-sm text-muted">Demo build, no SMS gateway: your code is <b className="font-mono text-ink">{sent.demoCode}</b></p>}
+        {err && <p role="alert" className="mt-2 text-sm text-err">{err}</p>}
         <div className="mt-5 grid grid-cols-2 gap-3">
-          <button className={btn.primary} disabled={typed.length < 6} onClick={onConfirm}>Confirm</button>
+          <button className={btn.primary} disabled={code.length < 6 || busy} onClick={() => void confirm()}>Confirm</button>
           <button className={btn.secondary} onClick={onCancel}>Cancel</button>
         </div>
+        <button className={`${btn.link} mt-3 text-sm`} onClick={send}>Send a new code</button>
       </div>
     </div>
   )

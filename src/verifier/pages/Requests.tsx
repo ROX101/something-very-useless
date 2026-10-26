@@ -7,7 +7,7 @@ import { PURPOSES, RETENTION, SHARED_FIELDS, useConsent } from '../../verify/con
 const input = 'h-11 w-full rounded border border-line bg-white px-3 text-[0.9375rem] focus:outline-none focus:ring-2 focus:ring-navy/30'
 
 export default function Requests() {
-  const { requests, request } = useConsent()
+  const { requests, request, confirmErased } = useConsent()
   const org = useApp((st) => st.account?.org ?? '')
   const mine = requests.filter((r) => r.verifierOrg === org)
   const [wantMarks, setWantMarks] = useState(false)
@@ -83,7 +83,7 @@ export default function Requests() {
         <Panel title="Your requests" className="min-w-0" flush>
           <div className="overflow-x-auto">
             <table className="w-full text-[0.9375rem]">
-              <thead className="border-b border-line bg-page/60"><tr><th className={th}>Student</th><th className={th}>Purpose</th><th className={th}>Sent</th><th className={th}>Status</th></tr></thead>
+              <thead className="border-b border-line bg-page/60"><tr><th className={th}>Student</th><th className={th}>Purpose</th><th className={th}>Sent</th><th className={th}>Status</th><th className={th}>Data retention</th></tr></thead>
               <tbody className="divide-y divide-line">
                 {mine.map((r) => (
                   <tr key={r.id}>
@@ -94,12 +94,23 @@ export default function Requests() {
                       <span className={`font-semibold ${r.status === 'Approved' ? 'text-ok' : r.status === 'Pending' ? 'text-warn' : 'text-muted'}`}>{r.status}</span>
                       {r.consentNo && <p className="text-sm text-muted">{r.consentNo}</p>}
                     </td>
+                    <td className={td}>
+                      {!r.firstViewedAt ? <span className="text-sm text-muted">Nothing received</span>
+                        : r.erasedAt ? <span className="text-sm text-ok">Erased {formatDate(r.erasedAt)}</span>
+                        : (
+                          <div>
+                            <p className={`text-sm ${r.eraseOverdue ? 'font-semibold text-err' : ''}`}>{r.eraseOverdue ? 'Overdue: erase now' : `Erase by ${formatDate(r.eraseBy!)}`}</p>
+                            <button className={`${btn.link} text-sm`} onClick={() => void confirmErased(r.id)}>Confirm erased</button>
+                          </div>
+                        )}
+                    </td>
                   </tr>
                 ))}
-                {!mine.length && <tr><td colSpan={4} className="px-4 py-8 text-center text-muted">No requests yet.</td></tr>}
+                {!mine.length && <tr><td colSpan={5} className="px-4 py-8 text-center text-muted">No requests yet.</td></tr>}
               </tbody>
             </table>
           </div>
+          <p className="border-t border-line px-5 py-3 text-sm text-muted">Under the DPDP Act, s. 8(7), erase what you received when the retention period ends or the student revokes consent, then confirm here. The student sees your confirmation.</p>
         </Panel>
       </div>
     </VerifierLayout>

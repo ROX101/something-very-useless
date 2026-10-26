@@ -5,6 +5,8 @@ import { PageTitle, Panel, btn, td, th } from '../../inst/ui/bits'
 import { audit, useAudit, verifyChain, type ChainCheck } from '../../audit/log'
 import { useSync } from '../../useSync'
 
+export const ADMIN_NAV = [{ to: '/aicte/admin', end: true, label: 'Audit trail' }, { to: '/aicte/admin/registrations', label: 'Registrations' }]
+
 const CATEGORIES = ['All categories', 'Sign-in', 'Data', 'Submission', 'Compliance', 'Consent', 'Verification', 'Reports', 'Registration', 'Administration', 'System']
 const PAGE = 25
 
@@ -86,7 +88,7 @@ export default function AuditTrail() {
   }
 
   return (
-    <PortalShell context="Platform administration" nav={[{ to: '/aicte/admin', end: true, label: 'Audit trail' }]}>
+    <PortalShell context="Platform administration" nav={ADMIN_NAV}>
       <PageTitle title="Audit trail" sub="System activity log, AY 2026-27"
         actions={<button className={btn.secondary} onClick={exportXlsx}>Export (.xlsx)</button>} />
 

@@ -58,6 +58,10 @@ export const users = pgTable('users', {
   states: text('states').array().notNull().default([]),
   /** For university registrars: the issuer they act for. */
   issuerDid: text('issuer_did'),
+  /** Registered mobile for one-time passwords (students). */
+  mobile: varchar('mobile', { length: 10 }),
+  /** Accounts created from a registration start with a one-time password that must be changed. */
+  mustChangePassword: boolean('must_change_password').notNull().default(false),
   active: boolean('active').notNull().default(true),
   createdAt: ts('created_at').notNull().defaultNow(),
   lastLoginAt: ts('last_login_at'),
@@ -174,6 +178,10 @@ export const verificationRequests = pgTable('verification_requests', {
   retentionDays: integer('retention_days').notNull().default(30),
   /** What the verifier asks to see: 'basic' (name, degree, year, status) and optionally 'marks' (CGPA, division). */
   fields: text('fields').array().notNull().default(['basic']),
+  /** DPDP Act s.8(7): the verifier must erase the data when consent is withdrawn or the retention period ends. */
+  firstViewedAt: ts('first_viewed_at'),
+  eraseBy: ts('erase_by'),
+  erasedAt: ts('erased_at'),
   createdAt: ts('created_at').notNull().defaultNow(),
   status: varchar('status', { length: 12 }).notNull().default('Pending'),
   decidedAt: ts('decided_at'),
@@ -248,6 +256,39 @@ export const registrations = pgTable('registrations', {
   purpose: text('purpose'),
   status: varchar('status', { length: 12 }).notNull().default('Received'),
   createdAt: ts('created_at').notNull().defaultNow(),
+  decidedAt: ts('decided_at'),
+  decidedBy: text('decided_by'),
+  decisionNote: text('decision_note'),
+  /** The account created on approval. */
+  userId: text('user_id'),
+})
+
+/** One-time passwords. Only a hash is stored; codes expire after 5 minutes and allow 5 attempts. */
+export const otps = pgTable('otps', {
+  id: bigserial('id', { mode: 'number' }).primaryKey(),
+  userId: text('user_id').notNull(),
+  purpose: text('purpose').notNull(),
+  codeHash: char('code_hash', { length: 64 }).notNull(),
+  expiresAt: ts('expires_at').notNull(),
+  attempts: integer('attempts').notNull().default(0),
+  usedAt: ts('used_at'),
+  createdAt: ts('created_at').notNull().defaultNow(),
+}, (t) => [index('otps_user_idx').on(t.userId, t.purpose)])
+
+/**
+ * Statutory access by a regulator to one institution's records, without student consent (as NAD allows for
+ * statutory and investigating bodies), but only with a recorded legal basis, for a limited time, and logged.
+ */
+export const statutoryAccess = pgTable('statutory_access', {
+  id: text('id').primaryKey(),
+  userId: text('user_id').notNull().references(() => users.userId),
+  org: text('org').notNull(),
+  institutionPid: varchar('institution_pid', { length: 20 }).notNull().references(() => institutions.pid),
+  basis: text('basis').notNull(),
+  reference: text('reference').notNull(),
+  createdAt: ts('created_at').notNull().defaultNow(),
+  expiresAt: ts('expires_at').notNull(),
+  notifiedAt: ts('notified_at'),
 })
 
 /**

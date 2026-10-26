@@ -25,6 +25,10 @@ import PublicVerify from './pages/PublicVerify'
 import UniversityStudents from './university/pages/Students'
 import UniversityCredentials from './university/pages/Credentials'
 import AuditTrail from './aicte/pages/AuditTrail'
+import ChangePassword from './pages/ChangePassword'
+import Registrations from './admin/Registrations'
+import RegulatorAccess from './regulator/Access'
+import InstCheck from './inst/pages/Check'
 
 const INST: Role[] = ['inst_admin', 'inst_operator']
 
@@ -33,6 +37,7 @@ function RequireRole({ roles, children }: { roles: Role[]; children: ReactNode }
   const location = useLocation()
   if (!account) return <Navigate to="/" replace state={{ from: location.pathname }} />
   if (!roles.includes(account.role)) return <Navigate to={ROLE_HOME[account.role]} replace />
+  if (account.mustChangePassword) return <ChangePassword />
   return <>{children}</>
 }
 
@@ -73,10 +78,13 @@ export default function App() {
       <Route path="/aicte/reports" element={<RequireRole roles={['aicte_bureau']}><AicteReports /></RequireRole>} />
       <Route path="/aicte/region" element={<RequireRole roles={['aicte_regional']}><PortalHome /></RequireRole>} />
       <Route path="/aicte/admin" element={<RequireRole roles={['aicte_admin']}><AuditTrail /></RequireRole>} />
+      <Route path="/aicte/admin/registrations" element={<RequireRole roles={['aicte_admin']}><Registrations /></RequireRole>} />
+      <Route path="/regulator" element={<RequireRole roles={['regulator']}><RegulatorAccess /></RequireRole>} />
       <Route path="/inst" element={<RequireRole roles={INST}><InstDashboard /></RequireRole>} />
       <Route path="/inst/upload" element={<RequireRole roles={INST}><InstUpload /></RequireRole>} />
       <Route path="/inst/ledger" element={<RequireRole roles={INST}><InstLedger /></RequireRole>} />
       <Route path="/inst/submit" element={<RequireRole roles={INST}><InstSubmit /></RequireRole>} />
+      <Route path="/inst/check" element={<RequireRole roles={INST}><InstCheck /></RequireRole>} />
       <Route path="/inst/*" element={<Navigate to="/inst" replace />} />
       <Route path="/student" element={<RequireRole roles={['student']}><StudentRecord /></RequireRole>} />
       <Route path="/student/requests" element={<RequireRole roles={['student']}><StudentRequests /></RequireRole>} />

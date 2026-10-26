@@ -10,6 +10,7 @@ import { canonical, type TrailEntry } from './lib/audit'
 import { createHash } from 'node:crypto'
 import { decodeJwt } from 'jose'
 import { readFileSync } from 'node:fs'
+import { approveWithOtp } from './test/helpers'
 import { generateDataset } from '../src/inst/data/generate'
 import { applyAllFixes } from '../src/inst/engine/rules'
 import type { ValidationResult } from '../src/inst/engine/types'
@@ -263,7 +264,8 @@ describe('consent (DPDP s. 6)', () => {
     const pending = (await s.get('/api/student/requests')).body
     expect(pending[0]).toMatchObject({ id: 'RQ-1001', status: 'Pending' })
 
-    const ok = await s.post('/api/student/requests/RQ-1001/decide').send({ status: 'Approved' })
+    expect((await s.post('/api/student/requests/RQ-1001/decide').send({ status: 'Approved' })).body.error).toBe('otp_required')
+    const ok = await approveWithOtp(s, 'RQ-1001')
     expect(ok.body).toMatchObject({ status: 'Approved', consentNo: 'CN-7731' })
     expect((await s.post('/api/student/requests/RQ-1001/decide').send({ status: 'Refused' })).status).toBe(409)
 
@@ -286,7 +288,7 @@ describe('consent (DPDP s. 6)', () => {
     const req = (await v.post('/api/verifier/requests').send({ apaar: APAAR, purpose: 'Background check before joining', validityDays: 1 })).body
     expect(req.id).toBe('RQ-1002')
     const s = await login('447120936618')
-    await s.post(`/api/student/requests/${req.id}/decide`).send({ status: 'Approved' })
+    await approveWithOtp(s, req.id)
     await db.execute(sql`update verification_requests set expires_at = now() - interval '1 minute' where id = ${req.id}`)
     expect((await v.get(`/api/verifier/records/${APAAR}`)).status).toBe(403)
     const mine = (await s.get('/api/student/requests')).body.find((r: { id: string }) => r.id === req.id)

@@ -11,16 +11,16 @@ import * as t from './schema'
 export const STUDENT_APAAR = '447120936618'
 export const GTU_DID = 'did:web:godavaritu.edu.in'
 
-const USER_LINKS: Partial<Record<Role, { institutionPid?: string; apaar?: string; states?: string[]; issuerDid?: string }>> = {
+const USER_LINKS: Partial<Record<Role, { institutionPid?: string; apaar?: string; states?: string[]; issuerDid?: string; mobile?: string }>> = {
   university: { issuerDid: GTU_DID },
   inst_admin: { institutionPid: INSTITUTION.pid },
   inst_operator: { institutionPid: INSTITUTION.pid },
-  student: { apaar: STUDENT_APAAR },
+  student: { apaar: STUDENT_APAAR, mobile: '9822014321' },
   aicte_regional: { states: ['MH', 'GA'] },
 }
 
 const TABLES = [
-  'idempotency', 'api_keys', 'audit_log', 'issuers', 'registrations', 'access_log', 'verification_requests', 'alert_actions', 'compliance_alerts', 'submissions',
+  'statutory_access', 'otps', 'idempotency', 'api_keys', 'audit_log', 'issuers', 'registrations', 'access_log', 'verification_requests', 'alert_actions', 'compliance_alerts', 'submissions',
   'uploads', 'enrolments', 'credentials', 'apaar_registry', 'users', 'programmes', 'institutions', 'counters',
 ]
 
@@ -64,6 +64,7 @@ export async function seed(db: Db, { force = false } = {}) {
       apaar: USER_LINKS[a.role]?.apaar ?? null,
       states: USER_LINKS[a.role]?.states ?? [],
       issuerDid: USER_LINKS[a.role]?.issuerDid ?? null,
+      mobile: USER_LINKS[a.role]?.mobile ?? null,
     })))
 
     const registry = [
@@ -112,10 +113,11 @@ export async function upgradeSeed(db: Db) {
       await tx.insert(t.users).values(missing.map((a) => ({
         userId: a.userId, passwordHash: hash, name: a.name, role: a.role, org: a.org, scope: a.scope,
         institutionPid: USER_LINKS[a.role]?.institutionPid ?? null, apaar: USER_LINKS[a.role]?.apaar ?? null,
-        states: USER_LINKS[a.role]?.states ?? [], issuerDid: USER_LINKS[a.role]?.issuerDid ?? null,
+        states: USER_LINKS[a.role]?.states ?? [], issuerDid: USER_LINKS[a.role]?.issuerDid ?? null, mobile: USER_LINKS[a.role]?.mobile ?? null,
       })))
       done.push(`accounts:${missing.map((a) => a.role).join(',')}`)
     }
+    await tx.update(t.users).set({ mobile: USER_LINKS.student!.mobile! }).where(and(eq(t.users.userId, STUDENT_APAAR), isNull(t.users.mobile)))
     await tx.update(t.institutions).set({ awardingDid: GTU_DID }).where(and(eq(t.institutions.pid, INSTITUTION.pid), isNull(t.institutions.awardingDid)))
     const demo = await tx.query.credentials.findFirst({ where: eq(t.credentials.certNo, 'GTU-2026-CSE-0417') })
     if (!demo || !demo.publicJws) {

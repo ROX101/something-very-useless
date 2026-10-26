@@ -5,9 +5,9 @@ import { z } from 'zod'
 import { COLUMNS, type UploadRow } from '../../src/inst/engine/types'
 import { runRules } from '../../src/inst/engine/rules'
 import { normaliseName } from '../../src/inst/engine/similarity'
-import { apiKeys, complianceAlerts, enrolments, institutions, programmes, submissions, uploads } from '../db/schema'
+import { accessLog, apaarRegistry, apiKeys, complianceAlerts, enrolments, institutions, programmes, submissions, uploads } from '../db/schema'
 import { createKey, toPublicKey } from '../lib/apikeys'
-import { audit } from '../lib/audit'
+import { audit, maskApaar } from '../lib/audit'
 import { requireRole } from '../lib/auth'
 import { badRequest, conflict, forbidden, handler, notFound, parse } from '../lib/http'
 import { next } from '../lib/counters'
@@ -213,6 +213,36 @@ export function instRoutes() {
     })
 
     res.status(201).json(toSubmission(saved))
+  }))
+
+  /**
+   * Prior-enrolment check before admitting a student: is this APAAR ID real, does the name match, and is the student
+   * still active at another institution? The student sees the check in their access log.
+   */
+  r.get('/verify/:apaar', handler(async (req, res) => {
+    const apaar = req.params.apaar.replace(/\s/g, '')
+    if (!/^\d{12}$/.test(apaar)) throw badRequest('invalid_apaar', 'Enter a 12-digit APAAR ID')
+    const name = typeof req.query.name === 'string' ? req.query.name : ''
+    const dob = typeof req.query.dob === 'string' ? req.query.dob : ''
+    const reg = await req.db.query.apaarRegistry.findFirst({ where: eq(apaarRegistry.apaar, apaar) })
+    const elsewhere = reg ? await req.db.select({
+      institution: enrolments.institution, city: enrolments.city, programme: enrolments.programme, ay: enrolments.ay,
+      status: enrolments.status, statusDate: enrolments.statusDate, pid: enrolments.institutionPid,
+    }).from(enrolments).where(eq(enrolments.apaar, apaar)).orderBy(desc(enrolments.ay)) : []
+    const inst = await req.db.query.institutions.findFirst({ where: eq(institutions.pid, pidOf(req)) })
+    if (reg) await req.db.insert(accessLog).values({ apaar, at: new Date().toISOString(), actor: inst?.name ?? req.user!.org, action: 'Checked your APAAR ID and prior enrolments before admission' })
+    await audit(req.db, req.user!, { category: 'Verification', action: 'Checked prior enrolment', detail: `APAAR ${maskApaar(apaar)}${reg ? '' : ', not found'}`, entity: 'student', entityId: apaar })
+    const other = elsewhere.filter((e) => e.pid !== pidOf(req))
+    res.json({
+      apaar, found: !!reg,
+      ...(reg ? {
+        name: reg.name,
+        nameMatches: name ? normaliseName(name) === normaliseName(reg.name) : undefined,
+        dobMatches: dob ? dob === reg.dob : undefined,
+      } : {}),
+      activeElsewhere: other.filter((e) => e.status === 'active' && e.ay === AY).map(({ pid: _p, ...e }) => e),
+      history: other.map(({ pid: _p, ...e }) => e),
+    })
   }))
 
   return r

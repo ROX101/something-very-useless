@@ -22,7 +22,21 @@ export const toClient = (r: Request) => ({
   id: r.id, apaar: r.apaar, verifier: r.verifier, verifierOrg: r.verifierOrg, purpose: r.purpose, reference: r.reference,
   validityDays: r.validityDays, retentionDays: r.retentionDays, fields: r.fields, createdAt: r.createdAt, status: r.status,
   decidedAt: r.decidedAt ?? undefined, consentNo: r.consentNo ?? undefined, expiresAt: r.expiresAt ?? undefined,
+  ...retention(r),
 })
+
+/**
+ * DPDP Act s.8(7): the verifier must erase what it received once consent is withdrawn or the purpose is served.
+ * The clock starts at the first view: erase by first view + retentionDays, or at once when consent is revoked.
+ */
+export function retention(r: Request) {
+  if (!r.firstViewedAt) return {}
+  const eraseBy = r.eraseBy ?? new Date(Date.parse(r.firstViewedAt) + r.retentionDays * 86400000).toISOString()
+  return {
+    firstViewedAt: r.firstViewedAt, eraseBy, erasedAt: r.erasedAt ?? undefined,
+    eraseOverdue: !r.erasedAt && Date.parse(eraseBy) < Date.now(),
+  }
+}
 
 export async function activeConsent(db: Db, apaar: string, org: string) {
   await expireStale(db)

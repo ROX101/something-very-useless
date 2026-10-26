@@ -33,7 +33,14 @@ export interface VerificationRequest {
   decidedAt?: string
   consentNo?: string
   expiresAt?: string
+  /** DPDP s.8(7) retention: set once the verifier has first viewed the record. */
+  firstViewedAt?: string
+  eraseBy?: string
+  erasedAt?: string
+  eraseOverdue?: boolean
 }
+
+export interface OtpSent { sentTo: string; expiresAt: string; demoCode?: string }
 
 export interface AccessEntry {
   id: string
@@ -62,7 +69,10 @@ interface ConsentState {
   loaded: boolean
   error: string | null
   hydrate: () => Promise<void>
-  decide: (id: string, status: 'Approved' | 'Refused') => Promise<void>
+  /** Throws on failure so the OTP dialog can show the reason (wrong or expired code). */
+  decide: (id: string, status: 'Approved' | 'Refused', otp?: string) => Promise<void>
+  sendOtp: (id: string) => Promise<OtpSent>
+  confirmErased: (id: string) => Promise<void>
   revoke: (id: string) => Promise<void>
   request: (r: Omit<VerificationRequest, 'id' | 'createdAt' | 'status' | 'verifier' | 'verifierOrg'> & Partial<Pick<VerificationRequest, 'verifier' | 'verifierOrg'>>) => Promise<void>
   /** Consent-gated, logged read of a student's shared fields. Returns null when there is no active consent. */
@@ -91,14 +101,21 @@ export const useConsent = create<ConsentState>((set, get) => ({
     }
   },
 
-  decide: async (id, status) => {
+  decide: async (id, status, otp) => {
+    const updated = await api.post<VerificationRequest>(`/student/requests/${id}/decide`, { status, otp })
+    set({ requests: get().requests.map((r) => (r.id === id ? updated : r)), error: null })
+    void get().hydrate()
+  },
+
+  sendOtp: (id) => api.post<OtpSent>(`/student/requests/${id}/otp`),
+
+  confirmErased: async (id) => {
     try {
-      const updated = await api.post<VerificationRequest>(`/student/requests/${id}/decide`, { status })
-      set({ requests: get().requests.map((r) => (r.id === id ? updated : r)) })
+      const updated = await api.post<VerificationRequest>(`/verifier/requests/${id}/erased`)
+      set({ requests: get().requests.map((r) => (r.id === id ? updated : r)), error: null })
     } catch (e) {
       set({ error: (e as Error).message })
     }
-    await get().hydrate()
   },
 
   revoke: async (id) => {

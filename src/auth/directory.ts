@@ -15,6 +15,8 @@ export interface Account {
   role: Role
   org: string
   scope: string
+  /** Set on accounts created from a registration until the one-time password is changed. */
+  mustChangePassword?: boolean
 }
 
 export const AICTE_DOMAIN = 'aicte-india.org'

@@ -3,18 +3,9 @@ import { PortalShell } from '../ui/PortalShell'
 import { useConsent } from '../verify/consent'
 import { useSync } from '../useSync'
 
-export const STUDENT = {
-  name: 'Ritika Deshmukh',
-  apaar: '447120936618',
-  studentId: 'GTU/2022/CSE/0417',
-  university: 'Godavari Technological University',
-  programme: 'B.Tech Computer Science & Engineering',
-  mobile: '+91 ••••• ••321',
-}
-
 export function StudentLayout({ children }: { children: ReactNode }) {
   useSync(useConsent((s) => s.hydrate), 4000)
-  const pending = useConsent((s) => s.requests.filter((r) => r.apaar === STUDENT.apaar && r.status === 'Pending').length)
+  const pending = useConsent((s) => s.requests.filter((r) => r.status === 'Pending').length)
   return (
     <PortalShell
       context="Your academic record"
