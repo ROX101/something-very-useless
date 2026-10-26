@@ -2,6 +2,7 @@ import { Router } from 'express'
 import { and, asc, desc, eq, inArray, sql } from 'drizzle-orm'
 import { z } from 'zod'
 import { insights, kpis } from '../services/insights'
+import { PROFILES, buildReport, type Profile } from '../services/reports'
 import type { Db } from '../db/client'
 import { alertActions, apiKeys, auditLog, complianceAlerts, submissions } from '../db/schema'
 import { createKey, toPublicKey } from '../lib/apikeys'
@@ -97,6 +98,16 @@ export function aicteRoutes() {
   /** Per-state figures, risk watch-list and cross-institution rings, all computed from live data. */
   r.get('/insights', officers, handler(async (req, res) => {
     res.json(await insights(req.db, stateFilter(req.user!)))
+  }))
+
+  /** NIRF, AISHE and NBA report formats from the enrolment register. Regional officers get their states only. */
+  r.get('/reports/:profile', officers, handler(async (req, res) => {
+    const profile = req.params.profile as Profile
+    if (!PROFILES.includes(profile)) throw notFound('No such report profile')
+    const state = typeof req.query.state === 'string' && /^[A-Z]{2}$/.test(req.query.state) ? req.query.state : null
+    const report = await buildReport(req.db, profile, '2026-27', stateFilter(req.user!), state)
+    await audit(req.db, req.user!, { category: 'Reports', action: 'Generated report', detail: `${report.title}${state ? `, ${state}` : ''}, ${report.rows.length} rows`, entity: 'report', entityId: profile })
+    res.json(report)
   }))
 
   /** Cross-institution duplicates: same APAAR ID actively enrolled at two or more institutions in the same AY. */

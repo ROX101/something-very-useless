@@ -5,7 +5,7 @@ import { z } from 'zod'
 import { COLUMNS, type UploadRow } from '../../src/inst/engine/types'
 import { runRules } from '../../src/inst/engine/rules'
 import { normaliseName } from '../../src/inst/engine/similarity'
-import { accessLog, apaarRegistry, apiKeys, complianceAlerts, enrolments, institutions, programmes, submissions, uploads } from '../db/schema'
+import { accessLog, apaarRegistry, apiKeys, complianceAlerts, enrolments, institutions, programmes, studentEvents, submissions, uploads } from '../db/schema'
 import { createKey, toPublicKey } from '../lib/apikeys'
 import { audit, maskApaar } from '../lib/audit'
 import { requireRole } from '../lib/auth'
@@ -13,6 +13,7 @@ import { badRequest, conflict, forbidden, handler, notFound, parse } from '../li
 import { next } from '../lib/counters'
 import { buildContext, validate } from '../services/validation'
 import { createUpload, currentUpload } from '../services/uploads'
+import { EVENT_LABEL, EVENT_TYPES, applyEvent, findEnrolment, replayEvents } from '../services/events'
 
 const MAX_ROWS = 20000
 const AY = '2026-27'
@@ -26,6 +27,23 @@ const Upload = z.object({ fileName: z.string().min(1).max(255), rows: z.array(Ro
 const Note = z.object({ action: z.string().min(1).max(120), detail: z.string().max(500) })
 const Rows = z.object({ rows: z.array(Row).max(MAX_ROWS), fixes: z.number().int().min(0).max(MAX_ROWS), note: Note.optional() })
 const SubmitBody = z.object({ declaration: z.literal(true) })
+const isoDate = z.string().regex(/^\d{4}-\d{2}-\d{2}$/, 'Use YYYY-MM-DD')
+const NewEvent = z.object({
+  type: z.enum(EVENT_TYPES),
+  /** Institution student ID (or APAAR ID) of an existing student; for a lateral entry, the new student's ID. */
+  student: z.string().trim().min(1).max(64),
+  date: isoDate,
+  note: z.string().trim().max(500).default(''),
+  newName: z.string().trim().min(2).max(120).optional(),
+  toInstitution: z.string().trim().max(200).optional(),
+  lateral: z.object({
+    apaar: z.string().transform((s) => s.replace(/\s/g, '')).pipe(z.string().regex(/^(\d{12})?$/, 'Enter a 12-digit APAAR ID or leave it blank')).default(''),
+    name: z.string().trim().min(2).max(120), dob: isoDate, gender: z.enum(['M', 'F', 'T']),
+    category: z.enum(['GEN', 'EWS', 'OBC-NCL', 'SC', 'ST']), programme: z.string().trim().min(1).max(120),
+    quota: z.enum(['REGULAR', 'NRI', 'NRI-CONVERTED', 'FN-OCI-CIWG', 'TFW', 'PM-USPY']).default('REGULAR'),
+    foreign: z.boolean().default(false),
+  }).optional(),
+})
 
 const toSubmission = (s: typeof submissions.$inferSelect) => ({
   receiptNo: s.receiptNo, submittedAt: s.submittedAt, submittedBy: s.submittedBy, records: s.records,
@@ -198,11 +216,14 @@ export function instRoutes() {
           submissionReceipt: receiptNo, instStudentId: row.INST_STUDENT_ID, name: row.NAME, nameKey: normaliseName(row.NAME),
           dob: /^\d{4}-\d{2}-\d{2}$/.test(row.DOB) ? row.DOB : null, gender: row.GENDER.slice(0, 1) || null,
           category: row.CATEGORY.slice(0, 12) || null, quota: row.QUOTA.slice(0, 16) || null,
+          foreign: row.FN === 'Y' || row.OCI === 'Y' || (!!row.NATIONALITY && !/^indian?$/i.test(row.NATIONALITY.trim())),
         }]
       })
       for (let i = 0; i < roster.length; i += 1000) {
         await tx.insert(enrolments).values(roster.slice(i, i + 1000)).onConflictDoNothing()
       }
+      // In-year changes recorded since the first submission (withdrawals, transfers, lateral entries) still stand.
+      await replayEvents(tx, pid, AY, inst)
 
       await audit(tx, req.user!, {
         category: 'Submission', action: 'Submitted enrolment data to AICTE',
@@ -243,6 +264,65 @@ export function instRoutes() {
       activeElsewhere: other.filter((e) => e.status === 'active' && e.ay === AY).map(({ pid: _p, ...e }) => e),
       history: other.map(({ pid: _p, ...e }) => e),
     })
+  }))
+
+  /** The institution's current roster for the year, with in-year status. */
+  r.get('/students', handler(async (req, res) => {
+    const rows = await req.db.select({
+      instStudentId: enrolments.instStudentId, apaar: enrolments.apaar, name: enrolments.name, programme: enrolments.programme,
+      quota: enrolments.quota, status: enrolments.status, statusDate: enrolments.statusDate, statusNote: enrolments.statusNote, entry: enrolments.entry,
+    }).from(enrolments).where(and(eq(enrolments.institutionPid, pidOf(req)), eq(enrolments.ay, AY))).orderBy(enrolments.programme, enrolments.name)
+    const events = await req.db.select().from(studentEvents).where(and(eq(studentEvents.institutionPid, pidOf(req)), eq(studentEvents.ay, AY))).orderBy(desc(studentEvents.id))
+    res.json({ students: rows, events: events.map((e) => ({ id: e.id, type: e.type, label: EVENT_LABEL[e.type as keyof typeof EVENT_LABEL], instStudentId: e.instStudentId, apaar: e.apaar, date: e.date, note: e.note, data: e.data, by: e.by, at: e.at })) })
+  }))
+
+  /**
+   * Records an in-year change. It takes effect in the national register at once (a withdrawn or transferred
+   * student no longer counts as active, so another institution can admit them without an R10 alert).
+   */
+  r.post('/students/events', handler(async (req, res) => {
+    const b = parse(NewEvent, req.body)
+    const pid = pidOf(req)
+    const inst = await req.db.query.institutions.findFirst({ where: eq(institutions.pid, pid) })
+    if (!inst) throw notFound('Institution not found')
+    const submitted = await req.db.query.submissions.findFirst({ where: and(eq(submissions.institutionPid, pid), eq(submissions.ay, AY)) })
+    if (!submitted) throw conflict('not_submitted', 'Submit this year’s enrolment data first; changes are recorded against it')
+
+    let instStudentId = b.student
+    let apaar: string | null = null
+    if (b.type === 'lateral_entry') {
+      if (!b.lateral) throw badRequest('invalid_request', 'Give the lateral entrant’s details')
+      if (await findEnrolment(req.db, pid, AY, b.student)) throw conflict('exists', `Student ID ${b.student} is already on your roster`)
+      apaar = b.lateral.apaar || null
+      if (apaar) {
+        const reg = await req.db.query.apaarRegistry.findFirst({ where: eq(apaarRegistry.apaar, apaar) })
+        if (!reg) throw badRequest('apaar_unknown', 'This APAAR ID is not in the registry')
+        const other = await req.db.query.enrolments.findFirst({ where: and(eq(enrolments.apaar, apaar), eq(enrolments.ay, AY), eq(enrolments.status, 'active')) })
+        if (other && other.institutionPid !== pid) throw conflict('active_elsewhere', `This student is still active at ${other.institution}, ${other.city}. They must be withdrawn or transferred there first.`)
+      }
+    } else {
+      const e = await findEnrolment(req.db, pid, AY, b.student)
+      if (!e) throw notFound(`No student ${b.student} on this year’s roster`)
+      instStudentId = e.instStudentId!
+      apaar = e.apaar
+      if ((b.type === 'withdrawn' || b.type === 'transferred') && e.status !== 'active') throw conflict('not_active', `This student is already ${e.status}`)
+      if (b.type === 'reinstated' && e.status === 'active') throw conflict('already_active', 'This student is already active')
+      if (b.type === 'name_corrected' && !b.newName) throw badRequest('invalid_request', 'Give the corrected name')
+      if (b.type === 'reinstated' && apaar) {
+        const other = await req.db.query.enrolments.findFirst({ where: and(eq(enrolments.apaar, apaar), eq(enrolments.ay, AY), eq(enrolments.status, 'active')) })
+        if (other && other.institutionPid !== pid) throw conflict('active_elsewhere', `This student is now active at ${other.institution}, ${other.city}`)
+      }
+    }
+
+    const data = b.type === 'lateral_entry' ? { ...b.lateral!, apaar: undefined } : { newName: b.newName, toInstitution: b.toInstitution }
+    const ev = await req.db.transaction(async (tx) => {
+      const [ev] = await tx.insert(studentEvents).values({ institutionPid: pid, ay: AY, type: b.type, instStudentId, apaar, date: b.date, note: b.note, data, by: `${req.user!.name} (${req.user!.userId})` }).returning()
+      await applyEvent(tx, ev, inst)
+      if (apaar) await tx.insert(accessLog).values({ apaar, at: new Date().toISOString(), actor: inst.name, action: `Recorded: ${EVENT_LABEL[b.type]}${b.type === 'name_corrected' ? ` to ${b.newName}` : ''}` })
+      await audit(tx, req.user!, { category: 'Data', action: `In-year update: ${EVENT_LABEL[b.type]}`, detail: `${instStudentId}${apaar ? `, APAAR ${maskApaar(apaar)}` : ''}, ${b.date}${b.note ? `, ${b.note}` : ''}`, entity: 'student_event', entityId: String(ev.id) })
+      return ev
+    })
+    res.status(201).json({ id: ev.id, type: ev.type, label: EVENT_LABEL[b.type], instStudentId, apaar, date: ev.date })
   }))
 
   return r

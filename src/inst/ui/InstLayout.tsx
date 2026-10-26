@@ -17,6 +17,7 @@ export function InstLayout({ children }: { children: ReactNode }) {
         { to: '/inst/upload', label: 'Upload and validate', done: Boolean(result) && result!.dataErrors === 0 },
         { to: '/inst/ledger', label: 'Seat ledger' },
         { to: '/inst/submit', label: 'Submit to AICTE', done: submitted },
+        { to: '/inst/students', label: 'In-year updates' },
         { to: '/inst/check', label: 'APAAR check' },
       ]}>
       {error && (

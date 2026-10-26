@@ -1,5 +1,5 @@
 {
-  "id": "3877f8b9-2a58-4abf-a2c0-352f0ce99d1f",
+  "id": "71463d32-aadf-49f8-bc78-99b856b551e7",
   "prevId": "1d203c38-defa-43f2-bf33-8d7390405b95",
   "version": "7",
   "dialect": "postgresql",
@@ -804,6 +804,20 @@
           "type": "text",
           "primaryKey": false,
           "notNull": false
+        },
+        "entry": {
+          "name": "entry",
+          "type": "varchar(12)",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "'first_year'"
+        },
+        "foreign": {
+          "name": "foreign",
+          "type": "boolean",
+          "primaryKey": false,
+          "notNull": true,
+          "default": false
         }
       },
       "indexes": {
@@ -1414,6 +1428,124 @@
         "statutory_access_institution_pid_institutions_pid_fk": {
           "name": "statutory_access_institution_pid_institutions_pid_fk",
           "tableFrom": "statutory_access",
+          "tableTo": "institutions",
+          "columnsFrom": [
+            "institution_pid"
+          ],
+          "columnsTo": [
+            "pid"
+          ],
+          "onDelete": "no action",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {},
+      "isRLSEnabled": false
+    },
+    "public.student_events": {
+      "name": "student_events",
+      "schema": "",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "bigserial",
+          "primaryKey": true,
+          "notNull": true
+        },
+        "institution_pid": {
+          "name": "institution_pid",
+          "type": "varchar(20)",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "ay": {
+          "name": "ay",
+          "type": "varchar(7)",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "type": {
+          "name": "type",
+          "type": "varchar(16)",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "inst_student_id": {
+          "name": "inst_student_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "apaar": {
+          "name": "apaar",
+          "type": "char(12)",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "date": {
+          "name": "date",
+          "type": "date",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "note": {
+          "name": "note",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "''"
+        },
+        "data": {
+          "name": "data",
+          "type": "jsonb",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "'{}'::jsonb"
+        },
+        "by": {
+          "name": "by",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "at": {
+          "name": "at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        }
+      },
+      "indexes": {
+        "student_events_inst_idx": {
+          "name": "student_events_inst_idx",
+          "columns": [
+            {
+              "expression": "institution_pid",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "ay",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        }
+      },
+      "foreignKeys": {
+        "student_events_institution_pid_institutions_pid_fk": {
+          "name": "student_events_institution_pid_institutions_pid_fk",
+          "tableFrom": "student_events",
           "tableTo": "institutions",
           "columnsFrom": [
             "institution_pid"

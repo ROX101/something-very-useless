@@ -2,7 +2,6 @@ import { Navigate, Route, Routes, useLocation } from 'react-router-dom'
 import type { ReactNode } from 'react'
 import { useEffect } from 'react'
 import Login, { Register } from './pages/Login'
-import PortalHome from './pages/PortalHome'
 import InfoPage, { INFO } from './pages/InfoPage'
 import { useApp } from './store'
 import { ROLE_HOME, type Account, type Role } from './auth/directory'
@@ -29,8 +28,10 @@ import ChangePassword from './pages/ChangePassword'
 import Registrations from './admin/Registrations'
 import RegulatorAccess from './regulator/Access'
 import InstCheck from './inst/pages/Check'
+import InstStudents from './inst/pages/Students'
 
 const INST: Role[] = ['inst_admin', 'inst_operator']
+const OFFICERS: Role[] = ['aicte_bureau', 'aicte_regional']
 
 function RequireRole({ roles, children }: { roles: Role[]; children: ReactNode }) {
   const account = useApp((s) => s.account)
@@ -72,11 +73,11 @@ export default function App() {
         <Route key={id} path={`/${id}`} element={<InfoPage id={id} />} />
       ))}
 
-      <Route path="/aicte" element={<RequireRole roles={['aicte_bureau']}><AicteOverview /></RequireRole>} />
-      <Route path="/aicte/alerts" element={<RequireRole roles={['aicte_bureau']}><AicteAlerts /></RequireRole>} />
-      <Route path="/aicte/rings" element={<RequireRole roles={['aicte_bureau']}><AicteRings /></RequireRole>} />
-      <Route path="/aicte/reports" element={<RequireRole roles={['aicte_bureau']}><AicteReports /></RequireRole>} />
-      <Route path="/aicte/region" element={<RequireRole roles={['aicte_regional']}><PortalHome /></RequireRole>} />
+      <Route path="/aicte" element={<RequireRole roles={OFFICERS}><AicteOverview /></RequireRole>} />
+      <Route path="/aicte/alerts" element={<RequireRole roles={OFFICERS}><AicteAlerts /></RequireRole>} />
+      <Route path="/aicte/rings" element={<RequireRole roles={OFFICERS}><AicteRings /></RequireRole>} />
+      <Route path="/aicte/reports" element={<RequireRole roles={OFFICERS}><AicteReports /></RequireRole>} />
+      <Route path="/aicte/region" element={<Navigate to="/aicte" replace />} />
       <Route path="/aicte/admin" element={<RequireRole roles={['aicte_admin']}><AuditTrail /></RequireRole>} />
       <Route path="/aicte/admin/registrations" element={<RequireRole roles={['aicte_admin']}><Registrations /></RequireRole>} />
       <Route path="/regulator" element={<RequireRole roles={['regulator']}><RegulatorAccess /></RequireRole>} />
@@ -84,6 +85,7 @@ export default function App() {
       <Route path="/inst/upload" element={<RequireRole roles={INST}><InstUpload /></RequireRole>} />
       <Route path="/inst/ledger" element={<RequireRole roles={INST}><InstLedger /></RequireRole>} />
       <Route path="/inst/submit" element={<RequireRole roles={INST}><InstSubmit /></RequireRole>} />
+      <Route path="/inst/students" element={<RequireRole roles={INST}><InstStudents /></RequireRole>} />
       <Route path="/inst/check" element={<RequireRole roles={INST}><InstCheck /></RequireRole>} />
       <Route path="/inst/*" element={<Navigate to="/inst" replace />} />
       <Route path="/student" element={<RequireRole roles={['student']}><StudentRecord /></RequireRole>} />

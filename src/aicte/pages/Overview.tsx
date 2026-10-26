@@ -7,6 +7,7 @@ import { withStats } from '../states'
 import { AY } from '../data'
 import { statusOf, useAllAlerts, useCases, useInsights, useKpis } from '../store'
 import { TileMap } from '../ui/TileMap'
+import { useApp } from '../../store'
 
 export default function Overview() {
   const k = useKpis()
@@ -14,6 +15,8 @@ export default function Overview() {
   const alerts = useAllAlerts()
   const actions = useCases((s) => s.actions)
   const days = daysUntil(DEADLINE)
+  const account = useApp((s) => s.account)
+  const regional = account?.role === 'aicte_regional'
 
   const states = useMemo(() => withStats(insights.states), [insights.states])
   const watchlist = insights.watchlist.slice(0, 5)
@@ -22,7 +25,7 @@ export default function Overview() {
 
   return (
     <AicteLayout>
-      <PageTitle title="National overview" sub={`Regulation Bureau, enrolment returns for AY ${AY}`} />
+      <PageTitle title={regional ? 'Regional overview' : 'National overview'} sub={regional ? `${account!.org}, ${account!.scope}, enrolment returns for AY ${AY}` : `Regulation Bureau, enrolment returns for AY ${AY}`} />
 
       <div className="space-y-6">
         <Notice tone="deadline">

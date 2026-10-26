@@ -99,6 +99,10 @@ export const enrolments = pgTable('enrolments', {
   status: varchar('status', { length: 12 }).notNull().default('active'),
   statusDate: date('status_date', { mode: 'string' }),
   statusNote: text('status_note'),
+  /** first_year | lateral (NBA N2: lateral entry into the second year). */
+  entry: varchar('entry', { length: 12 }).notNull().default('first_year'),
+  /** Foreign national or OCI: NIRF "outside country", AISHE foreign students. */
+  foreign: boolean('foreign').notNull().default(false),
 }, (t) => [
   index('enrolments_apaar_idx').on(t.apaar),
   index('enrolments_person_idx').on(t.nameKey, t.dob),
@@ -320,3 +324,28 @@ export const counters = pgTable('counters', {
   name: text('name').primaryKey(),
   value: integer('value').notNull(),
 })
+
+/**
+ * In-year changes to an institution's roster after submission: withdrawal, transfer out, name correction,
+ * lateral entry and reinstatement. Events are kept and replayed on every resubmission, so a revised Excel file
+ * cannot silently undo them.
+ */
+export const studentEvents = pgTable('student_events', {
+  id: bigserial('id', { mode: 'number' }).primaryKey(),
+  institutionPid: varchar('institution_pid', { length: 20 }).notNull().references(() => institutions.pid),
+  ay: varchar('ay', { length: 7 }).notNull(),
+  type: varchar('type', { length: 16 }).notNull(),
+  instStudentId: text('inst_student_id').notNull(),
+  apaar: char('apaar', { length: 12 }),
+  date: date('date', { mode: 'string' }).notNull(),
+  note: text('note').notNull().default(''),
+  data: jsonb('data').$type<StudentEventData>().notNull().default({}),
+  by: text('by').notNull(),
+  at: ts('at').notNull().defaultNow(),
+}, (t) => [index('student_events_inst_idx').on(t.institutionPid, t.ay)])
+
+export interface StudentEventData {
+  newName?: string
+  toInstitution?: string
+  name?: string; dob?: string; gender?: string; category?: string; programme?: string; quota?: string; foreign?: boolean
+}

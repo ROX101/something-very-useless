@@ -36,7 +36,7 @@ export const ROLE_LABEL: Record<Role, string> = {
 
 export const ROLE_HOME: Record<Role, string> = {
   aicte_bureau: '/aicte',
-  aicte_regional: '/aicte/region',
+  aicte_regional: '/aicte',
   aicte_admin: '/aicte/admin',
   inst_admin: '/inst',
   inst_operator: '/inst',

@@ -55,6 +55,20 @@ CREATE TABLE "statutory_access" (
 	"notified_at" timestamp with time zone
 );
 --> statement-breakpoint
+CREATE TABLE "student_events" (
+	"id" bigserial PRIMARY KEY NOT NULL,
+	"institution_pid" varchar(20) NOT NULL,
+	"ay" varchar(7) NOT NULL,
+	"type" varchar(16) NOT NULL,
+	"inst_student_id" text NOT NULL,
+	"apaar" char(12),
+	"date" date NOT NULL,
+	"note" text DEFAULT '' NOT NULL,
+	"data" jsonb DEFAULT '{}'::jsonb NOT NULL,
+	"by" text NOT NULL,
+	"at" timestamp with time zone DEFAULT now() NOT NULL
+);
+--> statement-breakpoint
 ALTER TABLE "enrolments" ALTER COLUMN "apaar" DROP NOT NULL;--> statement-breakpoint
 ALTER TABLE "credentials" ADD COLUMN "public_jws" text;--> statement-breakpoint
 ALTER TABLE "credentials" ADD COLUMN "revoked_at" timestamp with time zone;--> statement-breakpoint
@@ -79,6 +93,8 @@ ALTER TABLE "enrolments" ADD COLUMN "quota" varchar(16);--> statement-breakpoint
 ALTER TABLE "enrolments" ADD COLUMN "status" varchar(12) DEFAULT 'active' NOT NULL;--> statement-breakpoint
 ALTER TABLE "enrolments" ADD COLUMN "status_date" date;--> statement-breakpoint
 ALTER TABLE "enrolments" ADD COLUMN "status_note" text;--> statement-breakpoint
+ALTER TABLE "enrolments" ADD COLUMN "entry" varchar(12) DEFAULT 'first_year' NOT NULL;--> statement-breakpoint
+ALTER TABLE "enrolments" ADD COLUMN "foreign" boolean DEFAULT false NOT NULL;--> statement-breakpoint
 ALTER TABLE "institutions" ADD COLUMN "awarding_did" text;--> statement-breakpoint
 ALTER TABLE "programmes" ADD COLUMN "last_year_admitted" integer;--> statement-breakpoint
 ALTER TABLE "registrations" ADD COLUMN "decided_at" timestamp with time zone;--> statement-breakpoint
@@ -95,6 +111,8 @@ ALTER TABLE "verification_requests" ADD COLUMN "erased_at" timestamp with time z
 ALTER TABLE "api_keys" ADD CONSTRAINT "api_keys_institution_pid_institutions_pid_fk" FOREIGN KEY ("institution_pid") REFERENCES "public"."institutions"("pid") ON DELETE no action ON UPDATE no action;--> statement-breakpoint
 ALTER TABLE "statutory_access" ADD CONSTRAINT "statutory_access_user_id_users_user_id_fk" FOREIGN KEY ("user_id") REFERENCES "public"."users"("user_id") ON DELETE no action ON UPDATE no action;--> statement-breakpoint
 ALTER TABLE "statutory_access" ADD CONSTRAINT "statutory_access_institution_pid_institutions_pid_fk" FOREIGN KEY ("institution_pid") REFERENCES "public"."institutions"("pid") ON DELETE no action ON UPDATE no action;--> statement-breakpoint
+ALTER TABLE "student_events" ADD CONSTRAINT "student_events_institution_pid_institutions_pid_fk" FOREIGN KEY ("institution_pid") REFERENCES "public"."institutions"("pid") ON DELETE no action ON UPDATE no action;--> statement-breakpoint
 CREATE INDEX "otps_user_idx" ON "otps" USING btree ("user_id","purpose");--> statement-breakpoint
+CREATE INDEX "student_events_inst_idx" ON "student_events" USING btree ("institution_pid","ay");--> statement-breakpoint
 CREATE UNIQUE INDEX "credentials_status_idx" ON "credentials" USING btree ("issuer_did","status_index");--> statement-breakpoint
 CREATE INDEX "enrolments_person_idx" ON "enrolments" USING btree ("name_key","dob");
