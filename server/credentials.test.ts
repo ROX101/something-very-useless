@@ -142,3 +142,21 @@ describe('upgrading a database seeded by an earlier version', () => {
     expect((await verifyWithRegistry(pub.jws)).jti).toBe('GTU-2026-CSE-0417')
   })
 })
+
+describe('signing key repair', () => {
+  it('rotates an unreadable issuer key and re-signs its certificates', async () => {
+    const { repairIssuerKeys } = await import('./services/credentials')
+    expect(await repairIssuerKeys(ctx.db)).toEqual([])
+    const before = (await request(ctx.app).get('/api/public/issuers')).body[0].kid
+    // simulate a key stored under a different SIGNING_KEY_SECRET
+    await ctx.db.execute(sql`update issuers set private_jwk_enc = 'AAAAAAAAAAAAAAAA.AAAAAAAAAAAAAAAAAAAAAA.AAAA'`)
+    expect((await request(ctx.app).get('/api/public/status/gtu')).status).toBe(500)
+    expect(await repairIssuerKeys(ctx.db)).toEqual(['GTU'])
+    const issuer = (await request(ctx.app).get('/api/public/issuers')).body[0]
+    expect(issuer.kid).not.toBe(before)
+    expect((await request(ctx.app).get('/api/public/status/gtu')).status).toBe(200)
+    const cert = (await request(ctx.app).get('/api/public/c/GTU-2026-CSE-0417')).body
+    const key = await importJWK(issuer.jwk as JWK, 'ES256')
+    await expect(compactVerify(cert.jws, key)).resolves.toBeTruthy()
+  })
+})

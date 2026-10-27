@@ -63,7 +63,7 @@ To wipe and reseed later, run `npm run db:reset` with `DATABASE_URL` set to the 
 | `GET/POST /api/verifier/requests` · `GET /records/:apaar` · `POST /requests/:id/erased` | Verifier (records need active consent; every read is logged) |
 | `GET/POST /api/regulator/access` · `GET /access/:id/students[/:apaar]` | Regulator statutory access |
 | `GET /api/university/students` · `/students.csv` · `GET/POST /credentials` · `POST /credentials/:certNo/revoke` | University registrar |
-| `POST /v1/institutions/{pid}/enrolments:batch` · `GET .../enrolments/validation` · `GET /v1/students/{apaar}` · `POST /v1/aicte/approvals` | Integration API (API key, see `/openapi.json`) |
+| `POST /api/v1/institutions/{pid}/enrolments:batch` · `GET .../enrolments/validation` · `GET /api/v1/students/{apaar}` · `POST /api/v1/aicte/approvals` | Integration API (API key, see `/api/openapi.json`) |
 | `GET /api/public/issuers` · `/c/:certNo` · `/certificates/:certNo` · `/status/:issuer` · `POST /registrations` · `GET /api/health` | Public |
 
 ## Sign-in and registration

@@ -38,6 +38,24 @@ export async function createIssuer(db: Exec, input: { did: string; name: string;
   return row
 }
 
+/** True when the stored private key can be read with the current SIGNING_KEY_SECRET. */
+export function keyReadable(privateJwkEnc: string) {
+  try { decrypt(privateJwkEnc); return true } catch { return false }
+}
+
+/** Gives an issuer a new key pair (new kid). Signatures made with the old key stop verifying. */
+export async function rotateIssuerKey(db: Exec, did: string) {
+  const issuer = await db.query.issuers.findFirst({ where: eq(issuers.did, did) })
+  if (!issuer) throw new Error(`Unknown issuer ${did}`)
+  const { publicKey, privateKey } = await generateKeyPair('ES256', { extractable: true })
+  const kid = `${issuer.short.toLowerCase()}-${new Date().getFullYear()}-${randomBytes(3).toString('hex')}`
+  const [row] = await db.update(issuers).set({
+    kid, publicJwk: (await exportJWK(publicKey)) as unknown as Record<string, string>,
+    privateJwkEnc: encrypt(JSON.stringify(await exportJWK(privateKey))),
+  }).where(eq(issuers.did, did)).returning()
+  return row
+}
+
 /** Signs a JWT-VC payload with the issuer's key. */
 export async function signAs(db: Exec, did: string, payload: Record<string, unknown>) {
   const issuer = await db.query.issuers.findFirst({ where: eq(issuers.did, did) })

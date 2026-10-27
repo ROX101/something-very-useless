@@ -3,6 +3,7 @@ import { createApp } from './app'
 import { createDb, createPool, runMigrations } from './db/client'
 import { seed, upgradeSeed } from './db/seed'
 import { env } from './env'
+import { repairIssuerKeys } from './services/credentials'
 
 async function main() {
   const pool = createPool()
@@ -13,6 +14,10 @@ async function main() {
   if (env.seedOnBoot) {
     const r = await seed(db)
     console.log(r.seeded ? '[db] demo data seeded' : '[db] demo data already present')
+  }
+  const rotated = await repairIssuerKeys(db)
+  if (rotated.length) console.warn(`[keys] SIGNING_KEY_SECRET changed: new signing keys for ${rotated.join(', ')}, certificates re-signed`)
+  if (env.seedOnBoot) {
     const u = await upgradeSeed(db)
     if (u.upgraded.length) console.log(`[db] demo data upgraded: ${u.upgraded.join(', ')}`)
   }
