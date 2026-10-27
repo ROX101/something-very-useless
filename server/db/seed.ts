@@ -2,7 +2,8 @@ import bcrypt from 'bcryptjs'
 import { and, eq, isNull, sql } from 'drizzle-orm'
 import { ACCOUNTS, DEMO_PASSWORD, type Role } from '../../src/auth/directory'
 import { generateDataset } from '../../src/inst/data/generate'
-import { INSTITUTION, PROGRAMMES } from '../../src/inst/data/reference'
+import { INSTITUTION, MEGHAVARSHA, MEGHAVARSHA_PROGRAMMES, PROGRAMMES } from '../../src/inst/data/reference'
+import { DATASET_2 } from '../../src/inst/data/dataset'
 import { createIssuer } from '../lib/signing'
 import { issueCredential } from '../services/credentials'
 import type { Db } from './client'
@@ -18,6 +19,17 @@ const USER_LINKS: Partial<Record<Role, { institutionPid?: string; apaar?: string
   student: { apaar: STUDENT_APAAR, mobile: '9822014321' },
   aicte_regional: { states: ['MH', 'GA'] },
 }
+
+/** Per-account links where the role alone is not enough (two institutions have nodal officers). */
+const ACCOUNT_LINKS: Record<string, { institutionPid?: string }> = {
+  'nodal@meghavarsha-tech.edu.in': { institutionPid: MEGHAVARSHA.pid },
+}
+const linkOf = (a: { userId: string; role: Role }) => ({ ...USER_LINKS[a.role], ...ACCOUNT_LINKS[a.userId] })
+
+const meghavarshaRow = () => ({
+  pid: MEGHAVARSHA.pid, name: MEGHAVARSHA.name, city: MEGHAVARSHA.city, state: MEGHAVARSHA.state, university: MEGHAVARSHA.university,
+  type: MEGHAVARSHA.type, initials: MEGHAVARSHA.initials, established: MEGHAVARSHA.established, approval: MEGHAVARSHA.approval, motto: MEGHAVARSHA.motto,
+})
 
 const TABLES = [
   'student_events', 'statutory_access', 'otps', 'idempotency', 'api_keys', 'audit_log', 'issuers', 'registrations', 'access_log', 'verification_requests', 'alert_actions', 'compliance_alerts', 'submissions',
@@ -54,21 +66,24 @@ export async function seed(db: Db, { force = false } = {}) {
         established: INSTITUTION.established, approval: INSTITUTION.approval, motto: INSTITUTION.motto,
         awardingDid: GTU_DID,
       },
+      meghavarshaRow(),
     ])
+    await tx.insert(t.programmes).values(MEGHAVARSHA_PROGRAMMES.map((p) => ({ ...p, institutionPid: MEGHAVARSHA.pid })))
 
     await tx.insert(t.programmes).values(PROGRAMMES.map((p) => ({ ...p, institutionPid: INSTITUTION.pid })))
 
     await tx.insert(t.users).values(ACCOUNTS.map((a) => ({
       userId: a.userId, passwordHash: hash, name: a.name, role: a.role, org: a.org, scope: a.scope,
-      institutionPid: USER_LINKS[a.role]?.institutionPid ?? null,
-      apaar: USER_LINKS[a.role]?.apaar ?? null,
-      states: USER_LINKS[a.role]?.states ?? [],
-      issuerDid: USER_LINKS[a.role]?.issuerDid ?? null,
-      mobile: USER_LINKS[a.role]?.mobile ?? null,
+      institutionPid: linkOf(a).institutionPid ?? null,
+      apaar: linkOf(a).apaar ?? null,
+      states: linkOf(a).states ?? [],
+      issuerDid: linkOf(a).issuerDid ?? null,
+      mobile: linkOf(a).mobile ?? null,
     })))
 
     const registry = [
       ...dataset.registry,
+      ...DATASET_2.registry,
       { apaar: STUDENT_APAAR, name: 'Ritika Deshmukh', dob: '2004-03-14', gender: 'F' },
     ]
     for (let i = 0; i < registry.length; i += 500) {
@@ -79,6 +94,7 @@ export async function seed(db: Db, { force = false } = {}) {
       { name: 'consent', value: 7730 },
       { name: 'request', value: 1000 },
       { name: `receipt:${INSTITUTION.pid}`, value: 90 },
+      { name: `receipt:${MEGHAVARSHA.pid}`, value: 40 },
       // the demo degree keeps its familiar number and status-list position
       { name: `status:${GTU_DID}`, value: 416 },
     ])
@@ -106,14 +122,24 @@ export async function upgradeSeed(db: Db) {
       await createIssuer(tx, { did: GTU_DID, name: INSTITUTION.university, short: 'GTU', city: 'Nashik' })
       done.push('issuer')
     }
+    // The second demo institution, its programmes and its students in the mock APAAR registry.
+    if (!(await tx.query.institutions.findFirst({ where: eq(t.institutions.pid, MEGHAVARSHA.pid) }))) {
+      await tx.insert(t.institutions).values(meghavarshaRow())
+      await tx.insert(t.programmes).values(MEGHAVARSHA_PROGRAMMES.map((p) => ({ ...p, institutionPid: MEGHAVARSHA.pid })))
+      for (let i = 0; i < DATASET_2.registry.length; i += 500) {
+        await tx.insert(t.apaarRegistry).values(DATASET_2.registry.slice(i, i + 500)).onConflictDoNothing()
+      }
+      await tx.insert(t.counters).values({ name: `receipt:${MEGHAVARSHA.pid}`, value: 40 }).onConflictDoNothing()
+      done.push('meghavarsha')
+    }
     const have = new Set((await tx.select({ id: t.users.userId }).from(t.users)).map((u) => u.id))
     const missing = ACCOUNTS.filter((a) => !have.has(a.userId))
     if (missing.length) {
       const hash = await bcrypt.hash(DEMO_PASSWORD, 10)
       await tx.insert(t.users).values(missing.map((a) => ({
         userId: a.userId, passwordHash: hash, name: a.name, role: a.role, org: a.org, scope: a.scope,
-        institutionPid: USER_LINKS[a.role]?.institutionPid ?? null, apaar: USER_LINKS[a.role]?.apaar ?? null,
-        states: USER_LINKS[a.role]?.states ?? [], issuerDid: USER_LINKS[a.role]?.issuerDid ?? null, mobile: USER_LINKS[a.role]?.mobile ?? null,
+        institutionPid: linkOf(a).institutionPid ?? null, apaar: linkOf(a).apaar ?? null,
+        states: linkOf(a).states ?? [], issuerDid: linkOf(a).issuerDid ?? null, mobile: linkOf(a).mobile ?? null,
       })))
       done.push(`accounts:${missing.map((a) => a.role).join(',')}`)
     }

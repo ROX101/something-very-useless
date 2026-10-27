@@ -59,6 +59,8 @@ export const ACCOUNTS: Account[] = [
     org: 'Aranya Institute of Technology, Nashik', scope: 'PID 1-9000417' },
   { userId: 'operator@aranya-tech.edu.in', name: 'Nikhil Bhosale', role: 'inst_operator',
     org: 'Aranya Institute of Technology, Nashik', scope: 'PID 1-9000417, upload only' },
+  { userId: 'nodal@meghavarsha-tech.edu.in', name: 'Dr. Alok Saxena', role: 'inst_admin',
+    org: 'Meghavarsha Institute of Technology, Bhopal', scope: 'PID 1-9000932' },
   { userId: '447120936618', name: 'Ritika Deshmukh', role: 'student',
     org: 'APAAR 4471 2093 6618', scope: 'Own records' },
   { userId: 'kabir.menon@tarangsoftware.in', name: 'Kabir Menon', role: 'verifier',

@@ -133,7 +133,7 @@ describe('AICTE approvals import', () => {
     const ik = (await nodal.post('/api/inst/api-keys').send({ name: 'ERP 2' })).body.key
     expect((await request(ctx.app).post('/api/v1/aicte/approvals').set('Authorization', `Bearer ${ik}`).send(body)).status).toBe(403)
     const rows = (await ctx.db.execute<{ intake: number; last_year_admitted: number }>(
-      'select intake, last_year_admitted from programmes where institution_pid = \'1-9000932\'' as never)).rows
+      'select intake, last_year_admitted from programmes where institution_pid = \'1-9000932\' and code = \'CSE\'' as never)).rows
     expect(rows).toEqual([{ intake: 120, last_year_admitted: 73 }])
   })
 })

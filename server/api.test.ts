@@ -47,9 +47,9 @@ describe('health', () => {
 describe('seed', () => {
   it('loads the demo logins and reference data but no activity', async () => {
     const count = async (table: string) => (await db.execute<{ n: number }>(sql.raw(`select count(*)::int as n from ${table}`))).rows[0].n
-    expect(await count('users')).toBe(9)
-    expect(await count('institutions')).toBe(1)
-    expect(await count('programmes')).toBe(5)
+    expect(await count('users')).toBe(10)
+    expect(await count('institutions')).toBe(2)
+    expect(await count('programmes')).toBe(9)
     for (const t of ['compliance_alerts', 'verification_requests', 'access_log', 'enrolments', 'submissions', 'uploads', 'alert_actions']) {
       expect(await count(t), t).toBe(0)
     }
@@ -182,22 +182,22 @@ describe('AICTE', () => {
   it('computes KPIs from the database, not a fixed baseline', async () => {
     const a = await login('meena.iyer@aicte-india.org')
     const k = (await a.get('/api/aicte/kpis')).body
-    expect(k).toMatchObject({ institutions: 1, submitted: 1, records: 507, openAlerts: 2, crossDuplicates: 0 })
+    expect(k).toMatchObject({ institutions: 2, submitted: 1, records: 507, openAlerts: 2, crossDuplicates: 0 })
     // 6 FN/exception rows have no APAAR ID out of 507
     expect(k.apaarLinkedPct).toBeCloseTo(98.8, 1)
     expect(k.exceptionPct).toBeCloseTo(1.2, 1)
 
     const ins = (await a.get('/api/aicte/insights')).body
-    expect(ins.states).toEqual([{ code: 'MH', institutions: 1, submitted: 1, excessAlerts: 1, openAlerts: 2, apaarPct: k.apaarLinkedPct }])
+    expect(ins.states).toContainEqual({ code: 'MH', institutions: 1, submitted: 1, excessAlerts: 1, openAlerts: 2, apaarPct: k.apaarLinkedPct })
     expect(ins.watchlist).toHaveLength(1)
     expect(ins.watchlist[0]).toMatchObject({ pid: '1-9000417', risk: 40 })
     expect(ins.rings).toEqual([])
   })
 
   it('scopes a regional officer to their states', async () => {
-    await db.insert(institutions).values({ pid: '1-9000932', name: 'Meghavarsha Institute of Technology', city: 'Bhopal', state: 'MP' })
+    await db.insert(institutions).values({ pid: '1-9000999', name: 'Narmada Test Institute', city: 'Indore', state: 'MP' })
     await db.insert(complianceAlerts).values({
-      id: 'T-MP-R06', institutionPid: '1-9000932', institution: 'Meghavarsha Institute of Technology', city: 'Bhopal', state: 'MP',
+      id: 'T-MP-R06', institutionPid: '1-9000999', institution: 'Narmada Test Institute', city: 'Indore', state: 'MP',
       rule: 'R06', clause: '7.4(g)', title: 'test alert', detail: 'test', detectedAt: new Date().toISOString(), live: true,
     })
     const r = await login('rahul.kulkarni@aicte-india.org')
@@ -207,7 +207,7 @@ describe('AICTE', () => {
     expect((await r.get('/api/aicte/kpis')).body.institutions).toBe(1)
     expect((await r.post('/api/aicte/alerts/T-MP-R06/actions').send({ status: 'Reviewed, no action' })).status).toBe(403)
     const b = await login('meena.iyer@aicte-india.org')
-    expect((await b.get('/api/aicte/kpis')).body).toMatchObject({ institutions: 2, openAlerts: 3 })
+    expect((await b.get('/api/aicte/kpis')).body).toMatchObject({ institutions: 3, openAlerts: 3 })
   })
 
   it('records case actions, and closing an alert takes it off the counts', async () => {

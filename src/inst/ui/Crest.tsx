@@ -1,9 +1,14 @@
 import { useId } from 'react'
-import { INSTITUTION } from '../data/reference'
+import { useInst } from '../store'
 
 export function Crest({ size = 72 }: { size?: number }) {
   const id = useId().replace(/:/g, '')
   const small = size < 48
+  const INSTITUTION = useInst((s) => s.institution)
+  const i = INSTITUTION.name.toUpperCase().indexOf(' OF ')
+  const top = i > 0 ? INSTITUTION.name.slice(0, i).toUpperCase() : INSTITUTION.name.toUpperCase()
+  const bottom = i > 0 ? INSTITUTION.name.slice(i + 1).toUpperCase() : ''
+  const initials = INSTITUTION.initials ?? INSTITUTION.name.split(/\s+/).filter((w) => /^[A-Z]/.test(w)).map((w) => w[0]).join('').slice(0, 4)
   return (
     <svg width={size} height={size} viewBox="0 0 120 120" role="img" aria-label={`${INSTITUTION.name} crest`} className="shrink-0">
       <defs>
@@ -15,15 +20,15 @@ export function Crest({ size = 72 }: { size?: number }) {
       <circle cx="60" cy="60" r="36" fill="#FFFFFF" />
       {!small && (
         <g fill="#FFFFFF" fontFamily="IBM Plex Sans, sans-serif" fontSize="9" fontWeight="600" letterSpacing="1.2">
-          <text textAnchor="middle"><textPath href={`#top-${id}`} startOffset="50%">ARANYA INSTITUTE</textPath></text>
-          <text textAnchor="middle"><textPath href={`#bot-${id}`} startOffset="50%">OF TECHNOLOGY  {INSTITUTION.established}</textPath></text>
+          <text textAnchor="middle"><textPath href={`#top-${id}`} startOffset="50%">{top}</textPath></text>
+          <text textAnchor="middle"><textPath href={`#bot-${id}`} startOffset="50%">{bottom}{INSTITUTION.established ? `  ${INSTITUTION.established}` : ''}</textPath></text>
           <circle cx="12.5" cy="66" r="1.6" fill="#E07B1A" />
           <circle cx="107.5" cy="66" r="1.6" fill="#E07B1A" />
         </g>
       )}
       <path d="M60 34 L64 42 L60 40 L56 42 Z" fill="#E07B1A" />
       <text x="60" y="68" textAnchor="middle" fill="#111111" fontFamily="IBM Plex Serif, Georgia, serif" fontSize="22" fontWeight="500">
-        {INSTITUTION.initials}
+        {initials}
       </text>
       <path d="M44 76 Q60 84 76 76" fill="none" stroke="#1D6F42" strokeWidth="2.2" strokeLinecap="round" />
     </svg>

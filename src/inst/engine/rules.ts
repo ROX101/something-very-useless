@@ -69,6 +69,7 @@ export function runRules(rows: UploadRow[], ctx: RuleContext): ValidationResult 
   const byDob = new Map<string, ProbableMatch[]>()
   for (const m of ctx.probable ?? []) byDob.set(m.dob, [...(byDob.get(m.dob) ?? []), m])
   const probableHits = new Map<string, { m: ProbableMatch; rowNos: number[] }>()
+  const crossHits = new Map<string, { other: OtherEnrolment; rowNos: number[] }>()
 
   const flags = new Map<number, Flag[]>()
   const add = (r: UploadRow, f: Flag) => {
@@ -128,14 +129,12 @@ export function runRules(rows: UploadRow[], ctx: RuleContext): ValidationResult 
       }
       const other = elsewhere.get(apaar)
       if (other && other.pid !== ctx.institutionPid) {
-        const id = `R10-${apaar}`
+        // One alert per other institution, listing every shared student.
+        const id = `R10-${other.pid}`
         add(r, { rule: 'R10', kind: 'alert', field: 'APAAR_ID', alertId: id, message: `Active enrolment at ${other.institution}, ${other.city}, AY ${other.ay}` })
-        alerts.push({
-          id, rule: 'R10', clause: '',
-          title: `1 student also enrolled at ${other.institution}, ${other.city}`,
-          detail: `Same APAAR ID, AY ${other.ay}`,
-          rowNos: [r.rowNo],
-        })
+        const hit = crossHits.get(id) ?? { other, rowNos: [] }
+        if (!hit.rowNos.includes(r.rowNo)) hit.rowNos.push(r.rowNo)
+        crossHits.set(id, hit)
       }
     }
 
@@ -172,6 +171,14 @@ export function runRules(rows: UploadRow[], ctx: RuleContext): ValidationResult 
     }
   }
 
+  for (const [id, { other, rowNos }] of crossHits) {
+    alerts.push({
+      id, rule: 'R10', clause: '',
+      title: `${rowNos.length} student${rowNos.length > 1 ? 's' : ''} also enrolled at ${other.institution}, ${other.city}`,
+      detail: `Same APAAR ID, AY ${other.ay}`,
+      rowNos,
+    })
+  }
   for (const [id, { m, rowNos }] of probableHits) {
     alerts.push({
       id, rule: 'R11', clause: '',

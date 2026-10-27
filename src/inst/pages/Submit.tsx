@@ -3,10 +3,10 @@ import { Link } from 'react-router-dom'
 import { InstLayout } from '../ui/InstLayout'
 import { Card, ClauseChip, LockIcon, PageHeader, btn, formatDate } from '../ui/bits'
 import { useInst, useValidation, type Submission } from '../store'
-import { INSTITUTION } from '../data/reference'
 import { useApp } from '../../store'
 
 export default function Submit() {
+  const INSTITUTION = { ...useInst((st) => st.institution), ay: '2026-27' }
   const account = useApp((s) => s.account)!
   const { rows, fileName, submissions, submit: submitToAicte } = useInst()
   const result = useValidation()
@@ -136,6 +136,7 @@ function Item({ label, value, tone }: { label: string; value: string; tone?: str
 }
 
 function Receipt({ s }: { s: Submission }) {
+  const INSTITUTION = useInst((st) => st.institution)
   return (
     <Card className="overflow-hidden">
       <div className="flex items-center gap-4 border-b border-line border-l-4 border-l-ok bg-ok-bg px-6 py-5">

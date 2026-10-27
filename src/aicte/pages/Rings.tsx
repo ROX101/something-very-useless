@@ -11,14 +11,15 @@ interface Edge { from: string; to: string; students: number; probable: number }
 const MAX_POINTS = 30
 
 /** The institution that appears in the most cross-enrolments, with every institution it shares students with. */
-function focusRing(rings: Ring[]) {
+function focusRing(rings: Ring[], risk: Map<string, number> = new Map()) {
   const count = new Map<string, number>()
   for (const r of rings) {
     const n = r.students.length + r.probable.length
     count.set(r.from.pid, (count.get(r.from.pid) ?? 0) + n)
     count.set(r.to.pid, (count.get(r.to.pid) ?? 0) + n)
   }
-  const focusPid = [...count.entries()].sort((a, b) => b[1] - a[1])[0]?.[0]
+  // Most shared students first; on a tie (two ends of one ring) the higher-risk institution.
+  const focusPid = [...count.entries()].sort((a, b) => b[1] - a[1] || (risk.get(b[0]) ?? 0) - (risk.get(a[0]) ?? 0))[0]?.[0]
   if (!focusPid) return null
   const mine = rings.filter((r) => r.from.pid === focusPid || r.to.pid === focusPid)
   const focus = mine[0].from.pid === focusPid ? mine[0].from : mine[0].to
@@ -49,7 +50,7 @@ export default function Rings() {
   const actions = useCases((s) => s.actions)
   const { rings, watchlist } = useInsights()
   const alerts = useAllAlerts()
-  const view = useMemo(() => focusRing(rings), [rings])
+  const view = useMemo(() => focusRing(rings, new Map(watchlist.map((w) => [w.pid, w.risk]))), [rings, watchlist])
 
   if (!view) {
     return (

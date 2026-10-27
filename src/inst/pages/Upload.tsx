@@ -2,7 +2,7 @@ import { useEffect, useMemo, useRef, useState, type DragEvent } from 'react'
 import { Link } from 'react-router-dom'
 import { InstLayout } from '../ui/InstLayout'
 import { Card, ClauseChip, CountUp, LockIcon, PageHeader, RuleChip, btn, formatApaar, formatDate, maskApaar } from '../ui/bits'
-import { useInst, useValidation } from '../store'
+import { useInst, usePreviewContext, useValidation, type RowChange } from '../store'
 import { parseWorkbook, downloadErrorReport, downloadRows, downloadTemplate, type ParsedFile } from '../excel'
 import { blankRow } from '../fields'
 import { audit } from '../../audit/log'
@@ -10,14 +10,14 @@ import { DataPreview } from '../ui/DataPreview'
 import { ApiAccess } from '../ui/ApiAccess'
 import { StudentDrawer, StudentForm } from '../ui/StudentForm'
 import { GATES, RULE_INFO, applyAllFixes, applyFix, runRules } from '../engine/rules'
-import { PREVIEW_CONTEXT } from '../data/dataset'
-import { INSTITUTION } from '../data/reference'
+const INSTITUTION = { ay: '2026-27' }
 import { COLUMNS, type Flag, type RowResult, type RuleCode, type UploadRow, type ValidationResult } from '../engine/types'
 
 type Phase = 'select' | 'mapped' | 'validating' | 'results'
 
 export default function Upload() {
-  const { rows, fileName, uploadedAt, fixesApplied, setUpload, setRows, clearUpload, saveRow, setDraft } = useInst()
+  const { rows, fileName, uploadedAt, fixesApplied, setUpload, setRows, clearUpload, saveRow, setDraft, removeRows, changes } = useInst()
+  const ctx = usePreviewContext()
   const result = useValidation()
   const [phase, setPhase] = useState<Phase>(rows ? 'results' : 'select')
   const [parsed, setParsed] = useState<{ file: string; data: ParsedFile } | null>(null)
@@ -43,14 +43,14 @@ export default function Upload() {
 
   function startValidation() {
     if (!parsed) return
-    setPending(runRules(parsed.data.rows, PREVIEW_CONTEXT))
+    setPending(runRules(parsed.data.rows, ctx))
     setUpload(parsed.file, parsed.data.rows)
     setPhase('validating')
   }
 
   function validateManual(list: UploadRow[]) {
     const name = `Manual entry, ${new Date().toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' })}`
-    setPending(runRules(list, PREVIEW_CONTEXT))
+    setPending(runRules(list, ctx))
     setUpload(name, list)
     setDraft([])
     setPhase('validating')
@@ -70,6 +70,11 @@ export default function Upload() {
           onAdd={(row) => {
             audit('Data', 'Added student to file before validation', `${parsed.file}, row ${row.rowNo}, ${row.INST_STUDENT_ID}, ${row.NAME}`)
             setParsed((p) => (p ? { ...p, data: { ...p.data, rows: [...p.data.rows, row] } } : p))
+          }}
+          onRemove={(nos) => {
+            const gone = new Set(nos)
+            audit('Data', nos.length === 1 ? 'Removed student from file before validation' : 'Removed students from file before validation', `${parsed.file}, ${nos.length} row${nos.length === 1 ? '' : 's'}: ${nos.slice(0, 10).join(', ')}${nos.length > 10 ? '…' : ''}`)
+            setParsed((p) => (p ? { ...p, data: { ...p.data, rows: p.data.rows.filter((r) => !gone.has(r.rowNo)) } } : p))
           }} />
       )}
       {phase === 'validating' && pending && <Validating result={pending} onDone={() => setPhase('results')} />}
@@ -84,6 +89,8 @@ export default function Upload() {
           onApplyOne={(rowNo, f) => f.fix && setRows(applyFix(rows, rowNo, f.fix), 1)}
           rows={rows}
           onSaveRow={saveRow}
+          onRemoveRows={removeRows}
+          changes={changes}
         />
       )}
     </InstLayout>
@@ -92,6 +99,7 @@ export default function Upload() {
 
 function SelectFile({ onFile, error, onManual }: { onFile: (f: File) => void; error: { text: string; missing?: string[]; extra?: string[] } | null; onManual: (rows: UploadRow[]) => void }) {
   const [tab, setTab] = useState<'excel' | 'manual' | 'api'>('excel')
+  const pid = useInst((s) => s.institution.pid)
   const [over, setOver] = useState(false)
   const input = useRef<HTMLInputElement>(null)
   const onDrop = (e: DragEvent) => {
@@ -161,7 +169,7 @@ function SelectFile({ onFile, error, onManual }: { onFile: (f: File) => void; er
 
       {tab === 'manual' && <ManualEntry onValidate={onManual} />}
 
-      {tab === 'api' && <ApiAccess pid={INSTITUTION.pid} ay={INSTITUTION.ay} />}
+      {tab === 'api' && <ApiAccess pid={pid} ay={INSTITUTION.ay} />}
     </>
   )
 }
@@ -245,7 +253,7 @@ function Tabs<T extends string>({ value, onChange, items }: { value: T; onChange
   )
 }
 
-function Mapping({ parsed, onBack, onValidate, onAdd }: { parsed: { file: string; data: ParsedFile }; onBack: () => void; onValidate: () => void; onAdd: (row: UploadRow) => void }) {
+function Mapping({ parsed, onBack, onValidate, onAdd, onRemove }: { parsed: { file: string; data: ParsedFile }; onBack: () => void; onValidate: () => void; onAdd: (row: UploadRow) => void; onRemove: (rowNos: number[]) => void }) {
   const { data } = parsed
   const [tab, setTab] = useState<'rows' | 'add'>('rows')
   const nextNo = data.rows.reduce((m, r) => Math.max(m, r.rowNo), 1) + 1
@@ -266,7 +274,7 @@ function Mapping({ parsed, onBack, onValidate, onAdd }: { parsed: { file: string
       <Tabs value={tab} onChange={setTab} items={[['rows', `Rows in file (${data.rows.length.toLocaleString('en-IN')})`], ['add', 'Add a student']]} />
       <div className="mt-6">
         {tab === 'rows'
-          ? <DataPreview rows={data.rows} title={`All rows in ${parsed.file}`} />
+          ? <DataPreview rows={data.rows} title={`All rows in ${parsed.file}`} onRemoveMany={onRemove} />
           : <AddStudentPanel nextNo={nextNo} sheet={parsed.file} onAdd={onAdd} />}
       </div>
     </>
@@ -359,6 +367,8 @@ function Results(props: {
   onApplyOne: (rowNo: number, f: Flag) => void
   rows: UploadRow[]
   onSaveRow: (row: UploadRow) => void
+  onRemoveRows: (rowNos: number[]) => void
+  changes: Record<number, RowChange>
 }) {
   const { result, fileName, uploadedAt, fixesApplied } = props
   const [drawer, setDrawer] = useState<number | null>(null)
@@ -437,7 +447,8 @@ function Results(props: {
 
       {view === 'records' && (
         <div className="mt-6">
-          <DataPreview rows={props.rows} results={result.rows} title={fileName}
+          <DataPreview rows={props.rows} results={result.rows} title={fileName} changes={props.changes}
+            onRemoveMany={props.onRemoveRows}
             onEdit={(n) => setEditing(props.rows.find((r) => r.rowNo === n) ?? null)}
             actions={<button className={btn.primary} onClick={() => setEditing(newRow)}>Add student</button>} />
         </div>

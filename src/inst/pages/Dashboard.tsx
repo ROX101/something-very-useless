@@ -1,8 +1,8 @@
 import { Link } from 'react-router-dom'
 import { InstLayout } from '../ui/InstLayout'
 import { Clause, LockIcon, Notice, Panel, btn, daysUntil, formatDate, td, th } from '../ui/bits'
-import { useInst, useValidation } from '../store'
-import { DEADLINE, INSTITUTION, PROGRAMMES, caps } from '../data/reference'
+import { stateName, useInst, useValidation } from '../store'
+import { DEADLINE, caps } from '../data/reference'
 import { Crest } from '../ui/Crest'
 import { useApp } from '../../store'
 
@@ -11,6 +11,8 @@ export default function Dashboard() {
   const result = useValidation()
   const submissions = useInst((s) => s.submissions)
   const latest = submissions[0]
+  const INSTITUTION = useInst((s) => s.institution)
+  const PROGRAMMES = useInst((s) => s.programmes)
   const days = daysUntil(DEADLINE)
 
   const status = latest
@@ -37,7 +39,7 @@ export default function Dashboard() {
         <Crest size={104} />
         <div className="min-w-0 flex-1">
           <h1 className="font-serif text-[1.875rem] font-medium leading-tight text-ink">{INSTITUTION.name}</h1>
-          <p className="mt-1 text-[0.9375rem] text-muted">{INSTITUTION.city}, {INSTITUTION.state}. Welcome, {account.name}</p>
+          <p className="mt-1 text-[0.9375rem] text-muted">{INSTITUTION.city}, {stateName(INSTITUTION.state)}. Welcome, {account.name}</p>
           <dl className="mt-4 grid gap-x-8 gap-y-3 text-sm sm:grid-cols-2 lg:grid-cols-4">
             <Fact label="AICTE permanent ID">{INSTITUTION.pid}</Fact>
             <Fact label="Established">{INSTITUTION.established}</Fact>

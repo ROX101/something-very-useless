@@ -44,3 +44,28 @@ export const CLAUSES: Record<string, string> = {
   '7.3(g)': 'Liable to a fine of 5× the total course fee per excess admission.',
   'Def. 10': 'Approved Intake excludes supernumerary seats.',
 }
+
+/**
+ * A second demo institution, for showing cross-institution checks. Its sample file shares students with
+ * Aranya: some under the same APAAR ID (R10) and some under a slightly different name with no APAAR ID (R11).
+ */
+export const MEGHAVARSHA = {
+  pid: '1-9000932',
+  name: 'Meghavarsha Institute of Technology',
+  city: 'Bhopal',
+  state: 'MP',
+  initials: 'MIT',
+  established: 2014,
+  type: 'Private, self-financing',
+  university: 'Narmada Technical University',
+  approval: 'Extension of Approval 2026-27',
+  motto: 'Gyanam Param Balam',
+}
+
+/** Last year's first-year admissions are low on purpose: this year's intake jump is a statistical anomaly. */
+export const MEGHAVARSHA_PROGRAMMES: (Programme & { lastYearAdmitted: number })[] = [
+  { code: 'CSE', label: 'B.Tech CSE', name: 'B.Tech Computer Science & Engineering', intake: 120, lastYearAdmitted: 68 },
+  { code: 'AIDS', label: 'B.Tech AI&DS', name: 'B.Tech Artificial Intelligence & Data Science', intake: 60, lastYearAdmitted: 34 },
+  { code: 'ECE', label: 'B.Tech ECE', name: 'B.Tech Electronics & Communication Engineering', intake: 60, lastYearAdmitted: 29 },
+  { code: 'MECH', label: 'B.Tech MECH', name: 'B.Tech Mechanical Engineering', intake: 60, lastYearAdmitted: 27 },
+]

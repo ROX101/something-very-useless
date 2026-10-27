@@ -2,6 +2,7 @@ import { useEffect, useRef, useState, type FormEvent } from 'react'
 import type { Column, UploadRow } from '../engine/types'
 import { FIELD, checkField, checkRow, type FieldDef } from '../fields'
 import { btn } from './bits'
+import { useInst } from '../store'
 
 const control = 'mt-1 h-11 w-full rounded border bg-white px-3 text-[0.9375rem] text-ink focus:outline-none focus:ring-2 focus:ring-navy/30 disabled:bg-page disabled:text-muted'
 
@@ -17,6 +18,9 @@ function Field({ f, row, error, onChange, onBlur, disabled, autoFocus }: {
   onChange: (v: string) => void; onBlur: () => void
 }) {
   const id = `f-${f.col}`
+  const programmes = useInst((st) => st.programmes)
+  // Programme choices are the signed-in institution's own approved programmes.
+  const options = f.col === 'PROGRAMME' ? programmes.map((p) => ({ value: p.label, label: p.name })) : f.options!
   const cls = `${control} ${error ? 'border-err' : 'border-line'}`
   const common = { id, disabled, autoFocus, onBlur, 'aria-invalid': Boolean(error), 'aria-describedby': error ? `${id}-err` : undefined }
   return (
@@ -27,7 +31,7 @@ function Field({ f, row, error, onChange, onBlur, disabled, autoFocus }: {
       {f.kind === 'select' ? (
         <select {...common} value={row[f.col]} onChange={(e) => onChange(e.target.value)} className={cls}>
           {f.col === 'GENDER' && <option value="">Choose</option>}
-          {f.options!.map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
+          {options.map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
         </select>
       ) : (
         <input {...common} type={f.kind === 'date' ? 'date' : 'text'} value={row[f.col]} placeholder={f.placeholder}

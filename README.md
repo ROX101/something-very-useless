@@ -79,6 +79,7 @@ Fields are checked when you leave them; wrong user ID, wrong password and non-AI
 | sysadmin@aicte-india.org | AICTE Administrator | /aicte/admin |
 | nodal@aranya-tech.edu.in | Institution Admin (nodal officer) | /inst |
 | operator@aranya-tech.edu.in | Data Operator | /inst |
+| nodal@meghavarsha-tech.edu.in | Institution Admin, Meghavarsha Institute of Technology, Bhopal (second demo college) | /inst |
 | 4471 2093 6618 (APAAR ID) | Student | /student |
 | kabir.menon@tarangsoftware.in | Registered Verifier | /verify |
 | registrar@godavaritu.edu.in | University Registrar (GTU) | /university |
@@ -114,6 +115,11 @@ Per rule before fixes: R01 2, R02 4, R03 3, R04 1, R08 1, R09 1, R06 3, R07 2 (n
 - "Download issues (.xlsx)" exports every flagged row.
 - Seat ledger: approved intake vs admitted per programme, supernumerary buckets (FN/OCI/CIWG 15%, TFW 5% only when at least half the seats are filled, PM-USPY 2 per course), excess seats past the intake line.
 - Submit: only the nodal officer can submit, after the declaration; the receipt shows a receipt number and a SHA-256 fingerprint of the data.
+
+### Demo: duplicate rings between two colleges
+`public/Meghavarsha_AY2026-27_FirstYear.xlsx` (260 rows) is the second college's file. Submit Aranya's file first, then sign in as `nodal@meghavarsha-tech.edu.in` and upload it: 38 students are flagged R10 (same APAAR ID, also enrolled at Aranya) and 9 R11 (same date of birth, a slightly different spelling, no APAAR ID). After it is submitted, /aicte/rings shows the ring (38 + 9 probable) and Meghavarsha's risk score of 74 (cross-enrolment 30, probable duplicates 20, intake up 65% on last year 12, 48% of admissions in the last week 12). `npm run sample` regenerates both files.
+
+In the preview table, select rows with the checkboxes and use **Remove selected** to drop wrongly entered students (before or after validation). Rows changed since upload are highlighted across the whole row: green for a suggested fix, orange for a hand edit, blue for a student added after upload; the **Updated** filter lists only those.
 
 ## AICTE portal
 Sign in as `meena.iyer@aicte-india.org`.

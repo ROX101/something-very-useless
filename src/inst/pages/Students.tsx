@@ -2,7 +2,7 @@ import { useEffect, useMemo, useState, type FormEvent } from 'react'
 import { InstLayout } from '../ui/InstLayout'
 import { PageTitle, Panel, btn, formatApaar, formatDate, td, th } from '../ui/bits'
 import { api } from '../../api'
-import { PROGRAMMES } from '../data/reference'
+import { useInst } from '../store'
 
 type EventType = 'withdrawn' | 'transferred' | 'name_corrected' | 'lateral_entry' | 'reinstated'
 interface Student { instStudentId: string; apaar: string | null; name: string; programme: string; quota: string; status: string; statusDate: string | null; statusNote: string | null; entry: string }
@@ -18,10 +18,11 @@ const TYPES: { id: EventType; label: string; help: string }[] = [
 const STATUS: Record<string, string> = { active: 'Studying', withdrawn: 'Withdrawn', transferred: 'Transferred out' }
 const input = 'h-11 w-full rounded border border-line bg-white px-3 text-[0.9375rem] focus:outline-none focus:ring-2 focus:ring-navy/30'
 const today = () => new Date().toISOString().slice(0, 10)
-const blankLateral = { apaar: '', name: '', dob: '', gender: 'F', category: 'GEN', programme: PROGRAMMES[0]?.label ?? '', quota: 'REGULAR' }
+const blankLateral = { apaar: '', name: '', dob: '', gender: 'F', category: 'GEN', programme: '', quota: 'REGULAR' }
 
 /** Withdrawals, transfers, name corrections and lateral entries after the year's return was submitted. */
 export default function Students() {
+  const PROGRAMMES = useInst((st) => st.programmes)
   const [students, setStudents] = useState<Student[]>([])
   const [events, setEvents] = useState<Ev[]>([])
   const [type, setType] = useState<EventType>('withdrawn')
@@ -46,7 +47,7 @@ export default function Students() {
         type, student: student.trim(), date, note,
         ...(type === 'name_corrected' ? { newName } : {}),
         ...(type === 'transferred' && toInstitution ? { toInstitution } : {}),
-        ...(type === 'lateral_entry' ? { lateral: lat } : {}),
+        ...(type === 'lateral_entry' ? { lateral: { ...lat, programme: lat.programme || PROGRAMMES[0]?.label } } : {}),
       })
       setOk(`${r.label} recorded for ${r.instStudentId}.`)
       setStudent(''); setNote(''); setNewName(''); setTo(''); setLat(blankLateral)
@@ -100,7 +101,7 @@ export default function Students() {
                   <select value={lat.category} onChange={setL('category')} className={`${input} mt-1`}>{['GEN', 'EWS', 'OBC-NCL', 'SC', 'ST'].map((c) => <option key={c}>{c}</option>)}</select>
                 </label>
                 <label className="text-sm text-muted">Programme
-                  <select value={lat.programme} onChange={setL('programme')} className={`${input} mt-1`}>{PROGRAMMES.map((p) => <option key={p.code} value={p.label}>{p.label}</option>)}</select>
+                  <select value={lat.programme || PROGRAMMES[0]?.label} onChange={setL('programme')} className={`${input} mt-1`}>{PROGRAMMES.map((p) => <option key={p.code} value={p.label}>{p.label}</option>)}</select>
                 </label>
               </>
             )}
